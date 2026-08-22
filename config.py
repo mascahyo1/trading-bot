@@ -1,6 +1,7 @@
 import os
 from dotenv import load_dotenv
 
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
 load_dotenv()
 
 INDODAX_API_KEY = os.getenv("INDODAX_API_KEY", "")
