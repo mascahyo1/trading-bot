@@ -105,7 +105,7 @@ def main():
         if a["idr"] > 100:
             lines.append(f"  {a['asset']}: {a['amount']:.6f} ≈ {a['idr']:,.0f} IDR")
     lines.append(f"\n💰 <b>Total: {portfolio['total_idr']:,.0f} IDR</b>")
-    lines.append(f"🕐 {datetime.now().strftime('%H:%M:%S')}")
+    lines.append(f"🕐 {datetime.now().strftime('%H:%M UTC')}")
 
     send_telegram("\n".join(lines))
     print(f"HEARTBEAT - {datetime.now().strftime('%H:%M:%S')}")
