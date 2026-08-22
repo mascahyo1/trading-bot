@@ -10,7 +10,13 @@ async function login() {
         fs.mkdirSync(SESSION_DIR, { recursive: true });
     }
 
-    console.log('Opening Ajaib login page...');
+    console.log('========================================');
+    console.log('  AJAIB TRADING BOT - LOGIN');
+    console.log('========================================');
+    console.log('');
+    console.log('Browser akan terbuka. Login manual.');
+    console.log('Termasuk 2FA dan PIN.');
+    console.log('');
 
     const browser = await chromium.launch({
         headless: false,
@@ -28,16 +34,27 @@ async function login() {
         timeout: 30000,
     });
 
-    console.log('Browser opened. Please login manually.');
-    console.log('Waiting for login to complete...');
+    console.log('1. Login di browser (email + password)...');
+    console.log('2. Jawab 2FA security question...');
+    console.log('3. Input PIN...');
+    console.log('4. Tunggu sampai halaman home muncul...');
+    console.log('');
 
-    await page.waitForTimeout(60000);
+    try {
+        await page.waitForURL('**/home', { timeout: 180000 });
+        console.log('Login berhasil! Menyimpan session...');
+    } catch (e) {
+        console.log('Timeout atau login gagal.');
+        await browser.close();
+        process.exit(1);
+    }
 
     await context.storageState({ path: SESSION_FILE });
-    console.log('Session saved to:', SESSION_FILE);
+    console.log('Session tersimpan di:', SESSION_FILE);
 
+    await page.waitForTimeout(2000);
     await browser.close();
-    console.log('Done.');
+    console.log('Selesai. Jalankan "npm start" untuk mulai trading.');
 }
 
 login().catch(err => {
