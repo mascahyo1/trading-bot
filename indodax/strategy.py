@@ -258,14 +258,49 @@ class RiskManager:
         wins = sum(1 for t in self.trade_history if t.get("pnl_amount", 0) > 0)
         return round(wins / len(self.trade_history) * 100, 2)
 
+    def get_avg_win_loss(self):
+        if not self.trade_history:
+            return 0, 0
+        wins = [t["pnl_amount"] for t in self.trade_history if t.get("pnl_amount", 0) > 0]
+        losses = [abs(t["pnl_amount"]) for t in self.trade_history if t.get("pnl_amount", 0) <= 0]
+        avg_win = sum(wins) / len(wins) if wins else 0
+        avg_loss = sum(losses) / len(losses) if losses else 0
+        return round(avg_win, 2), round(avg_loss, 2)
+
+    def get_unrealized_pnl(self, exchange):
+        total_unrealized = 0
+        for symbol, pos in self.positions.items():
+            if pos.status == "open":
+                ticker = exchange.fetch_ticker(symbol)
+                if ticker and ticker.get("last"):
+                    current_price = ticker["last"]
+                    unrealized = (current_price - pos.entry_price) * pos.amount
+                    total_unrealized += unrealized
+        return round(total_unrealized, 2)
+
+    def get_total_portfolio_value(self, exchange, idr_balance):
+        unrealized = self.get_unrealized_pnl(exchange)
+        return idr_balance + unrealized + self._get_open_positions_value(exchange)
+
+    def _get_open_positions_value(self, exchange):
+        total = 0
+        for symbol, pos in self.positions.items():
+            if pos.status == "open":
+                ticker = exchange.fetch_ticker(symbol)
+                if ticker and ticker.get("last"):
+                    total += ticker["last"] * pos.amount
+        return total
+
 
 class TradingStrategy:
     def __init__(self, analyzer, risk_manager):
         self.analyzer = analyzer
         self.risk_manager = risk_manager
-        self.min_confidence = 0.65
+        self.min_confidence = 0.70
         self.rsi_overbought = 70
-        self.rsi_oversold = 30
+        self.rsi_entry_max = 40
+        self.min_risk_reward = 2.0
+        self.min_win_rate = 40.0
 
     def evaluate(self, symbol, ohlcv, balance, current_price, is_primary=True):
         analysis = self.analyzer.analyze(ohlcv, symbol=symbol)
@@ -273,6 +308,7 @@ class TradingStrategy:
         confidence = analysis["confidence"]
         indicators = analysis.get("indicators", {})
         rsi = indicators.get("rsi", 50)
+        atr = indicators.get("atr", 0)
 
         logger.info(
             f"[{symbol}] Signal: {signal.upper()} | Confidence: {confidence:.1%} | "
@@ -361,6 +397,22 @@ class TradingStrategy:
             return {"action": "hold", "analysis": analysis}
 
         if signal == "buy":
+            if rsi > self.rsi_entry_max:
+                logger.info(f"[{symbol}] Skip buy: RSI {rsi} > {self.rsi_entry_max} (not oversold)")
+                return {"action": "hold", "reason": "rsi_too_high", "analysis": analysis}
+
+            win_rate = self.risk_manager.get_win_rate()
+            if len(self.risk_manager.trade_history) >= 5 and win_rate < self.min_win_rate:
+                logger.info(f"[{symbol}] Skip buy: win rate {win_rate}% < {self.min_win_rate}%")
+                return {"action": "hold", "reason": "low_win_rate", "analysis": analysis}
+
+            risk = current_price * STOP_LOSS_PCT
+            reward = current_price * TAKE_PROFIT_PCT
+            rr_ratio = reward / risk if risk > 0 else 0
+            if rr_ratio < self.min_risk_reward:
+                logger.info(f"[{symbol}] Skip buy: R/R {rr_ratio:.1f} < {self.min_risk_reward}")
+                return {"action": "hold", "reason": "poor_risk_reward", "analysis": analysis}
+
             min_order = MIN_ORDER_IDR * 1.5
             can_afford = balance >= min_order
 

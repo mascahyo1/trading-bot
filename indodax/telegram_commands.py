@@ -156,18 +156,28 @@ def get_analytics_text():
         best = max(trades, key=lambda t: t.get("pnl_amount", 0)) if trades else None
         worst = min(trades, key=lambda t: t.get("pnl_amount", 0)) if trades else None
 
+        daily_pnl = 0
+        today = now_jakarta().strftime("%Y-%m-%d")
+        for t in trades:
+            if t.get("exit_time", "").startswith(today):
+                daily_pnl += t.get("pnl_amount", 0)
+
         lines = [
-            "📊 <b>PERFORMANCE ANALYTICS</b>",
-            f"Total Trades: {total_trades}",
-            f"Win Rate: {win_rate:.1f}% ({len(wins)}W/{len(losses)}L)",
-            f"Total PnL: {total_pnl:+,.0f} IDR",
-            f"Avg Win: {avg_win:+,.0f} IDR",
-            f"Avg Loss: {avg_loss:+,.0f} IDR",
+            "🏦 <b>INDODAX ANALYTICS</b>",
+            f"📊 Total Trades: {total_trades}",
+            f"🎯 Win Rate: {win_rate:.1f}% ({len(wins)}W/{len(losses)}L)",
+            f"📈 Daily PnL: {daily_pnl:+,.0f} IDR",
+            f"💰 Total PnL: {total_pnl:+,.0f} IDR",
+            f"📊 Avg Win: {avg_win:+,.0f} IDR",
+            f"📉 Avg Loss: {avg_loss:+,.0f} IDR",
         ]
+        if avg_loss != 0:
+            rr = abs(avg_win / avg_loss) if avg_loss != 0 else 0
+            lines.append(f"⚖️ Risk/Reward: 1:{rr:.1f}")
         if best:
-            lines.append(f"Best Trade: {best['symbol']} {best['pnl_amount']:+,.0f} IDR")
+            lines.append(f"✅ Best: {best['symbol']} {best['pnl_amount']:+,.0f}")
         if worst:
-            lines.append(f"Worst Trade: {worst['symbol']} {worst['pnl_amount']:+,.0f} IDR")
+            lines.append(f"❌ Worst: {worst['symbol']} {worst['pnl_amount']:+,.0f}")
 
         return "\n".join(lines)
     except Exception as e:

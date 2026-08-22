@@ -129,7 +129,7 @@ def main():
     for a in portfolio["assets"]:
         if a["idr"] > 100:
             lines.append(f"  {a['asset']}: {a['amount']:.6f} ≈ {a['idr']:,.0f} IDR")
-    lines.append(f"\n💰 <b>Total: {portfolio['total_idr']:,.0f} IDR</b>")
+    lines.append(f"\n💰 <b>Cash: {portfolio['total_idr']:,.0f} IDR</b>")
 
     daily_pnl = portfolio.get("daily_pnl", 0)
     emoji = "📈" if daily_pnl >= 0 else "📉"
@@ -145,8 +145,8 @@ def main():
                 wins = sum(1 for t in trades if t.get("pnl_amount", 0) > 0)
                 total_pnl = sum(t.get("pnl_amount", 0) for t in trades)
                 win_rate = wins / total_trades * 100
-                lines.append(f"📊 Win Rate: {win_rate:.0f}% ({total_trades} trades)")
-                lines.append(f"💹 All-Time PnL: {total_pnl:+,.0f} IDR")
+                lines.append(f"📊 Win: {win_rate:.0f}% ({total_trades} trades)")
+                lines.append(f"💹 PnL: {total_pnl:+,.0f} IDR")
     except Exception:
         pass
 

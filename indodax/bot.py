@@ -275,6 +275,14 @@ class ProductionBot:
         self.logger.info("-" * 65)
         self.notifier.notify_summary(self.risk_manager)
         self.logger.info(f"Today: PnL={self.daily_pnl:+,.0f} IDR | Trades={self.trades_today}")
+
+        try:
+            unrealized = self.risk_manager.get_unrealized_pnl(self.exchange)
+            total_portfolio = self.risk_manager.get_total_portfolio_value(self.exchange, balance)
+            self.logger.info(f"Unrealized PnL: {unrealized:+,.0f} IDR | Portfolio: {total_portfolio:,.0f} IDR")
+        except Exception as e:
+            self.logger.warning(f"Portfolio calc error: {e}")
+
         self.logger.info(f"Uptime: {str(now - self.start_time).split('.')[0]}")
         self.logger.info("-" * 65)
 

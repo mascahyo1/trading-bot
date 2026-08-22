@@ -74,14 +74,30 @@ class TelegramNotifier:
         self.send(msg)
 
     def notify_summary(self, balance, positions, total_pnl, win_rate, trades):
+        avg_win, avg_loss = 0, 0
         msg = (
-            f"📊 <b>SUMMARY</b>\n"
+            f"🏦 <b>INDODAX SUMMARY</b>\n"
             f"💰 Balance: {balance:,.0f} IDR\n"
-            f"📂 Open Positions: {positions}\n"
-            f"📈 Total PnL: {total_pnl:+,.0f} IDR\n"
-            f"🎯 Win Rate: {win_rate}%\n"
-            f"🔄 Total Trades: {trades}\n"
+            f"📂 Open: {positions} positions\n"
+            f"📈 PnL: {total_pnl:+,.0f} IDR\n"
+            f"🎯 Win: {win_rate}% ({trades} trades)\n"
         )
+        if avg_win > 0 and avg_loss > 0:
+            msg += f"📊 Avg Win: {avg_win:,.0f} | Avg Loss: {avg_loss:,.0f}\n"
+        self.send(msg)
+
+    def notify_portfolio(self, balance, unrealized, total_portfolio, positions):
+        msg = (
+            f"🏦 <b>PORTFOLIO</b>\n"
+            f"💰 Cash: {balance:,.0f} IDR\n"
+            f"📈 Unrealized: {unrealized:+,.0f} IDR\n"
+            f"💎 Total: {total_portfolio:,.0f} IDR\n"
+        }
+        if positions:
+            msg += f"\n<b>POSITIONS</b>\n"
+            for sym, pos in positions.items():
+                if pos.status == "open":
+                    msg += f"  {sym}: {pos.amount:.6f} @ {pos.entry_price:,.0f}\n"
         self.send(msg)
 
     def notify_error(self, message):
