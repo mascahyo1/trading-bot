@@ -233,6 +233,19 @@ class ProductionBot:
             if ohlcv:
                 self.process_pair(symbol, ohlcv=ohlcv, is_primary=is_primary)
 
+        balance = self.get_balance()
+        min_order = MIN_ORDER_IDR * 1.5
+        if balance < min_order:
+            self.logger.info(f"Balance {balance:,.0f} < {min_order:,.0f} IDR, checking rebalance...")
+            rebalance_candidates = self.strategy.find_rebalance_sell_candidates(all_results, balance)
+            for candidate in rebalance_candidates:
+                symbol = candidate["symbol"]
+                self.logger.info(f"Rebalance: selling {symbol} to get IDR")
+                ticker = self.exchange.fetch_ticker(symbol)
+                if ticker:
+                    self.execute_sell(symbol, ticker["last"])
+                time.sleep(2)
+
         self.logger.info("-" * 65)
         self.notifier.notify_summary(self.risk_manager)
         self.logger.info(f"Today: PnL={self.daily_pnl:+,.0f} IDR | Trades={self.trades_today}")

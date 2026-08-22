@@ -226,6 +226,7 @@ class TradingStrategy:
                     "action": "close",
                     "reason": f"trailing_stop (peak: {pos.highest_price:.0f})",
                     "analysis": analysis,
+                    "amount": pos.amount,
                 }
 
             if current_price >= pos.take_profit:
@@ -233,6 +234,7 @@ class TradingStrategy:
                     "action": "close",
                     "reason": "take_profit",
                     "analysis": analysis,
+                    "amount": pos.amount,
                 }
 
             if rsi >= self.rsi_overbought and confidence > 0.5:
@@ -240,6 +242,7 @@ class TradingStrategy:
                     "action": "close",
                     "reason": f"smart_sell (RSI: {rsi:.1f} overbought)",
                     "analysis": analysis,
+                    "amount": pos.amount,
                 }
 
             macd_hist = indicators.get("macd_histogram", 0)
@@ -248,12 +251,20 @@ class TradingStrategy:
                     "action": "close",
                     "reason": f"smart_sell (RSI: {rsi:.1f}, MACD bearish)",
                     "analysis": analysis,
+                    "amount": pos.amount,
                 }
 
         if signal == "hold" or confidence < self.min_confidence:
             return {"action": "hold", "analysis": analysis}
 
         if signal == "buy":
+            min_order = MIN_ORDER_IDR * 1.5
+            can_afford = balance >= min_order
+
+            if not can_afford and symbol not in self.risk_manager.positions:
+                logger.info(f"[{symbol}] Cannot afford, balance {balance:,.0f} < {min_order:,.0f} IDR")
+                return {"action": "hold", "reason": "insufficient_balance", "analysis": analysis}
+
             if symbol in self.risk_manager.positions and self.risk_manager.positions[symbol].status == "open":
                 return {"action": "hold", "analysis": analysis}
 
@@ -273,3 +284,38 @@ class TradingStrategy:
             }
 
         return {"action": "hold", "analysis": analysis}
+
+    def find_rebalance_sell_candidates(self, all_analyses, balance):
+        if balance >= MIN_ORDER_IDR * 1.5:
+            return []
+
+        candidates = []
+        for analysis in all_analyses:
+            symbol = analysis["symbol"]
+            if symbol not in self.risk_manager.positions:
+                continue
+            if self.risk_manager.positions[symbol].status != "open":
+                continue
+
+            signal = analysis["signal"]
+            confidence = analysis["confidence"]
+            rsi = analysis.get("indicators", {}).get("rsi", 50)
+
+            score = 0
+            if signal == "sell":
+                score += 30 + int(confidence * 30)
+            if rsi > 60:
+                score += (rsi - 60) * 2
+            if rsi > 65:
+                score += 10
+
+            if score > 20:
+                candidates.append({
+                    "symbol": symbol,
+                    "score": score,
+                    "amount": self.risk_manager.positions[symbol].amount,
+                    "reason": f"rebalance (signal: {signal}, RSI: {rsi:.1f})",
+                })
+
+        candidates.sort(key=lambda x: x["score"], reverse=True)
+        return candidates[:1]
