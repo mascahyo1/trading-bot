@@ -104,8 +104,10 @@ class IndodaxExchange:
             return None
 
     def get_balance(self):
-        print(f"[DEBUG] api_key={self.api_key[:20]}... len={len(self.api_key)}")
-        print(f"[DEBUG] secret_len={len(self.secret_key)}")
+        with open("/tmp/debug_key.txt", "w") as f:
+            f.write(f"api_key={self.api_key}\n")
+            f.write(f"api_key_len={len(self.api_key)}\n")
+            f.write(f"secret_len={len(self.secret_key)}\n")
         return self._v2_request("GET", "/api/v2/account")
 
     def get_idr_balance(self):
