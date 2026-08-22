@@ -11,6 +11,9 @@ from config import (
     MIN_ORDER_IDR,
     TRADE_HISTORY_FILE,
     MAX_DAILY_LOSS_PCT,
+    RISK_PRIMARY_PCT,
+    RISK_SECONDARY_PCT,
+    TRADING_PAIRS,
     now_jakarta,
     format_datetime,
 )
@@ -102,8 +105,9 @@ class RiskManager:
     def can_open_position(self):
         return self.get_open_positions_count() < MAX_OPEN_POSITIONS
 
-    def calculate_position_size(self, balance, current_price):
-        risk_amount = balance * RISK_PER_TRADE
+    def calculate_position_size(self, balance, current_price, is_primary=True):
+        risk_pct = RISK_PRIMARY_PCT if is_primary else RISK_SECONDARY_PCT
+        risk_amount = balance * risk_pct
         position_value = min(POSITION_SIZE_USDT, risk_amount)
         min_value = MIN_ORDER_IDR * 1.5
         if position_value < min_value:
@@ -196,7 +200,7 @@ class TradingStrategy:
         self.rsi_overbought = 70
         self.rsi_oversold = 30
 
-    def evaluate(self, symbol, ohlcv, balance, current_price):
+    def evaluate(self, symbol, ohlcv, balance, current_price, is_primary=True):
         analysis = self.analyzer.analyze(ohlcv, symbol=symbol)
         signal = analysis["signal"]
         confidence = analysis["confidence"]
@@ -261,7 +265,7 @@ class TradingStrategy:
                 logger.info(f"Daily loss limit reached, skipping buy")
                 return {"action": "hold", "reason": "daily_loss_limit", "analysis": analysis}
 
-            amount = self.risk_manager.calculate_position_size(balance, current_price)
+            amount = self.risk_manager.calculate_position_size(balance, current_price, is_primary=is_primary)
             return {
                 "action": "buy",
                 "amount": amount,

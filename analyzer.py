@@ -289,3 +289,81 @@ class MarketAnalyzer:
                 result["agreement"] = False
 
         return result
+
+    def analyze_technical(self, ohlcv, symbol="UNKNOWN"):
+        if not ohlcv or len(ohlcv) < 50:
+            return {"signal": "hold", "confidence": 0, "indicators": {}, "symbol": symbol}
+
+        df = self.prepare_dataframe(ohlcv)
+        close = df["close"]
+
+        rsi = self.calc_rsi(close)
+        macd_line, signal_line, histogram = self.calc_macd(close)
+        atr = self.calc_atr(df)
+
+        rsi_signal, rsi_score = self.analyze_rsi(rsi)
+        macd_signal, macd_score = self.analyze_macd(macd_line, signal_line, histogram)
+        ema_signal, ema_score = self.analyze_ema(df)
+        bb_signal, bb_score = self.analyze_bollinger(df)
+        vol_signal, vol_score = self.analyze_volume(df)
+
+        indicators = {
+            "rsi": round(rsi.iloc[-1], 2),
+            "macd_histogram": round(histogram.iloc[-1], 2),
+            "atr": round(atr.iloc[-1], 2),
+            "ema_9": round(self.calc_ema(close, 9).iloc[-1], 2),
+            "ema_21": round(self.calc_ema(close, 21).iloc[-1], 2),
+            "volume_signal": vol_signal,
+        }
+
+        buy_score = 0
+        sell_score = 0
+
+        if rsi_signal == "buy":
+            buy_score += rsi_score * self.signal_weights["rsi"]
+        else:
+            sell_score += rsi_score * self.signal_weights["rsi"]
+
+        if macd_signal == "buy":
+            buy_score += macd_score * self.signal_weights["macd"]
+        else:
+            sell_score += macd_score * self.signal_weights["macd"]
+
+        if ema_signal == "buy":
+            buy_score += ema_score * self.signal_weights["ema"]
+        else:
+            sell_score += ema_score * self.signal_weights["ema"]
+
+        if bb_signal == "buy":
+            buy_score += bb_score * self.signal_weights["bollinger"]
+        else:
+            sell_score += bb_score * self.signal_weights["bollinger"]
+
+        if vol_signal in ("strong", "above_avg"):
+            if buy_score > sell_score:
+                buy_score += vol_score * self.signal_weights["volume"]
+            elif sell_score > buy_score:
+                sell_score += vol_score * self.signal_weights["volume"]
+
+        total_score = buy_score + sell_score
+        if total_score == 0:
+            return {"signal": "hold", "confidence": 0, "indicators": indicators, "symbol": symbol}
+
+        if buy_score > sell_score:
+            signal = "buy"
+            confidence = buy_score / total_score
+        elif sell_score > buy_score:
+            signal = "sell"
+            confidence = sell_score / total_score
+        else:
+            signal = "hold"
+            confidence = 0.5
+
+        return {
+            "signal": signal,
+            "confidence": round(min(confidence, 1.0), 3),
+            "buy_score": round(buy_score, 4),
+            "sell_score": round(sell_score, 4),
+            "indicators": indicators,
+            "symbol": symbol,
+        }

@@ -8,9 +8,9 @@ from datetime import datetime
 from config import now_jakarta, format_datetime
 
 from config import (
-    TRADING_PAIRS, INTERVAL_SECONDS, CANDLESTICK_TIMEFRAME,
+    TRADING_PAIRS, ALL_PAIRS, INTERVAL_SECONDS, CANDLESTICK_TIMEFRAME,
     INDODAX_SYMBOL_MAP, MAX_OPEN_POSITIONS, POSITION_SIZE_USDT,
-    MIN_ORDER_IDR,
+    MIN_ORDER_IDR, LLM_TOP_PAIRS,
 )
 from exchange import IndodaxExchange
 from analyzer import MarketAnalyzer
@@ -95,11 +95,60 @@ class ProductionBot:
             self.logger.error(f"Sell failed: {order}")
         return False
 
-    def process_pair(self, symbol):
+    def scan_all_pairs(self):
+        results = []
+        for symbol in ALL_PAIRS:
+            try:
+                ohlcv = self.exchange.fetch_ohlcv(
+                    symbol, timeframe=CANDLESTICK_TIMEFRAME, limit=100
+                )
+                if not ohlcv or len(ohlcv) < 50:
+                    continue
+
+                ticker = self.exchange.fetch_ticker(symbol)
+                if not ticker:
+                    continue
+
+                analysis = self.analyzer.analyze_technical(ohlcv, symbol=symbol)
+                analysis["symbol"] = symbol
+                analysis["current_price"] = ticker["last"]
+                results.append(analysis)
+            except Exception as e:
+                self.logger.warning(f"[{symbol}] Scan error: {e}")
+            time.sleep(1)
+        return results
+
+    def get_top_candidates(self, results, signal_type="buy"):
+        filtered = [r for r in results if r["signal"] == signal_type and r["confidence"] > 0.55]
+        filtered.sort(key=lambda x: x["confidence"], reverse=True)
+        return filtered[:LLM_TOP_PAIRS]
+
+    def analyze_with_llm(self, candidates):
+        analyzed = []
+        for c in candidates:
+            try:
+                symbol = c["symbol"]
+                ohlcv = self.exchange.fetch_ohlcv(symbol, timeframe=CANDLESTICK_TIMEFRAME, limit=100)
+                if not ohlcv:
+                    continue
+                ticker = self.exchange.fetch_ticker(symbol)
+                if not ticker:
+                    continue
+                analysis = self.analyzer.analyze(ohlcv, symbol=symbol)
+                analysis["symbol"] = symbol
+                analysis["current_price"] = ticker["last"]
+                analyzed.append(analysis)
+            except Exception as e:
+                self.logger.warning(f"[{symbol}] LLM analysis error: {e}")
+            time.sleep(1.5)
+        return analyzed
+
+    def process_pair(self, symbol, ohlcv=None, is_primary=True):
         try:
-            ohlcv = self.exchange.fetch_ohlcv(
-                symbol, timeframe=CANDLESTICK_TIMEFRAME, limit=100
-            )
+            if ohlcv is None:
+                ohlcv = self.exchange.fetch_ohlcv(
+                    symbol, timeframe=CANDLESTICK_TIMEFRAME, limit=100
+                )
             if not ohlcv or len(ohlcv) < 50:
                 self.logger.warning(f"[{symbol}] Insufficient data")
                 return
@@ -116,7 +165,7 @@ class ProductionBot:
                 self.logger.warning(f"[{symbol}] No balance")
                 return
 
-            decision = self.strategy.evaluate(symbol, ohlcv, balance, current_price)
+            decision = self.strategy.evaluate(symbol, ohlcv, balance, current_price, is_primary=is_primary)
             action = decision["action"]
             analysis = decision["analysis"]
 
@@ -160,16 +209,29 @@ class ProductionBot:
             self.trades_today = 0
 
         self.logger.info("=" * 65)
-        self.logger.info(f"CYCLE #{self.cycle_count} | {now.strftime('%Y-%m-%d %H:%M:%S')}")
+        self.logger.info(f"CYCLE #{self.cycle_count} | {format_datetime(now)}")
         self.logger.info("=" * 65)
 
         health = self.health_check()
         self.logger.info(f"Balance: {health['balance']:,.2f} IDR")
+        self.logger.info(f"Scanning {len(ALL_PAIRS)} pairs...")
         self.logger.info("-" * 65)
 
-        for symbol in TRADING_PAIRS:
-            self.process_pair(symbol)
-            time.sleep(1.5)
+        all_results = self.scan_all_pairs()
+        buy_candidates = self.get_top_candidates(all_results, "buy")
+        sell_candidates = self.get_top_candidates(all_results, "sell")
+
+        self.logger.info(f"Found: {len(buy_candidates)} buy, {len(sell_candidates)} sell candidates")
+
+        llm_analyzed = self.analyze_with_llm(buy_candidates + sell_candidates)
+
+        for analysis in llm_analyzed:
+            symbol = analysis["symbol"]
+            current_price = analysis["current_price"]
+            is_primary = symbol in TRADING_PAIRS
+            ohlcv = self.exchange.fetch_ohlcv(symbol, timeframe=CANDLESTICK_TIMEFRAME, limit=100)
+            if ohlcv:
+                self.process_pair(symbol, ohlcv=ohlcv, is_primary=is_primary)
 
         self.logger.info("-" * 65)
         self.notifier.notify_summary(self.risk_manager)
