@@ -10,8 +10,8 @@ WorkingDirectory=/home/cahyo/trading/indodax
 ExecStart=/home/cahyo/trading/venv/bin/python3 /home/cahyo/trading/indodax/bot.py
 Restart=always
 RestartSec=30
-StandardOutput=append:/home/cahyo/trading/indodax/logs/bot.stdout
-StandardError=append:/home/cahyo/trading/indodax/logs/bot.stderr
+StandardOutput=journal
+StandardError=journal
 
 # Security
 NoNewPrivileges=true
