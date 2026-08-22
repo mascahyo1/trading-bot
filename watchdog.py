@@ -6,6 +6,7 @@ Cron: */5 * * * * /home/cahyo/trading-bot/venv/bin/python3 /home/cahyo/trading-b
 import time
 import json
 import os
+import sys
 import urllib.request
 from datetime import datetime
 
