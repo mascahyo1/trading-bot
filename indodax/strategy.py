@@ -35,8 +35,31 @@ class Position:
         self.entry_time = now_jakarta().isoformat()
         self.status = "open"
         self.partial_sell_count = 0
+        self.dca_count = 0
         self.tp1_pct = 0.03
         self.tp2_pct = 0.06
+        self.dca1_pct = 0.03
+        self.dca2_pct = 0.06
+
+    def get_dca1_price(self):
+        return self.entry_price * (1 - self.dca1_pct)
+
+    def get_dca2_price(self):
+        return self.entry_price * (1 - self.dca2_pct)
+
+    def should_dca(self, current_price):
+        if self.dca_count >= 2:
+            return False
+        if self.dca_count == 0 and current_price <= self.get_dca1_price():
+            return True
+        if self.dca_count == 1 and current_price <= self.get_dca2_price():
+            return True
+        return False
+
+    def dca_amount(self, balance, current_price):
+        if self.dca_count == 0:
+            return round(self.initial_amount * 0.5, 8)
+        return round(self.initial_amount * 0.25, 8)
 
     def update_trailing_stop(self, current_price):
         if current_price > self.highest_price:
@@ -291,6 +314,23 @@ class TradingStrategy:
                     "analysis": analysis,
                     "amount": pos.amount,
                 }
+
+            if pos.should_dca(current_price):
+                dca_amount = pos.dca_amount(balance, current_price)
+                cost = dca_amount * current_price
+                if balance >= cost * 1.01:
+                    pos.dca_count += 1
+                    pos.amount += dca_amount
+                    pos.entry_price = (pos.entry_price * (pos.amount - dca_amount) + current_price * dca_amount) / pos.amount
+                    return {
+                        "action": "buy",
+                        "amount": dca_amount,
+                        "reason": f"dca_{pos.dca_count} (price dropped {pos.dca_count * 3}%)",
+                        "analysis": analysis,
+                        "is_dca": True,
+                    }
+                else:
+                    logger.info(f"[{symbol}] DCA skipped: insufficient balance")
 
             if current_price >= pos.take_profit:
                 return {
