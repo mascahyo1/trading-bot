@@ -4,8 +4,8 @@ from dotenv import load_dotenv
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 load_dotenv()
 
-INDODAX_API_KEY = os.getenv("INDODAX_API_KEY", "")
-INDODAX_API_SECRET = os.getenv("INDODAX_API_SECRET", "")
+INDODAX_API_KEY = os.getenv("indodax_api_key", "")
+INDODAX_API_SECRET = os.getenv("indodax_api_secret", "")
 
 LLM_BASE_URL = os.getenv("llm_base_url", "")
 LLM_API_KEY = os.getenv("llm_api_key", "")
