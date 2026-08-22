@@ -177,20 +177,20 @@ def handle_command(text, chat_id):
     cmd = text.lower().split()[0] if text else ""
 
     if cmd == "/status":
-        send_telegram(get_status_text())
+        send_telegram("🏦 <b>INDODAX</b>\n" + get_status_text())
 
     elif cmd == "/portfolio":
-        send_telegram(get_portfolio_text())
+        send_telegram("🏦 <b>INDODAX</b>\n" + get_portfolio_text())
 
     elif cmd == "/trades":
-        send_telegram(get_trades_text())
+        send_telegram("🏦 <b>INDODAX</b>\n" + get_trades_text())
 
     elif cmd == "/analytics" or cmd == "/stats":
-        send_telegram(get_analytics_text())
+        send_telegram("🏦 <b>INDODAX</b>\n" + get_analytics_text())
 
     elif cmd == "/stop":
         if chat_id in PENDING_CONFIRMATION and PENDING_CONFIRMATION[chat_id] == "stop":
-            send_telegram("🛑 Bot stopping...")
+            send_telegram("🏦 <b>INDODAX</b>\n🛑 Bot stopping...")
             if BOT_INSTANCE:
                 BOT_INSTANCE.stop()
             PENDING_CONFIRMATION.pop(chat_id, None)
@@ -202,11 +202,11 @@ def handle_command(text, chat_id):
                     {"text": "❌ Cancel", "callback_data": "cancel"}
                 ]]
             })
-            send_telegram("⚠️ Are you sure you want to STOP the bot?", reply_markup=keyboard)
+            send_telegram("🏦 <b>INDODAX</b>\n⚠️ Are you sure you want to STOP the bot?", reply_markup=keyboard)
 
     elif cmd == "/start":
         if chat_id in PENDING_CONFIRMATION and PENDING_CONFIRMATION[chat_id] == "start":
-            send_telegram("🚀 Bot starting...")
+            send_telegram("🏦 <b>INDODAX</b>\n🚀 Bot starting...")
             if BOT_INSTANCE:
                 BOT_INSTANCE.start()
             PENDING_CONFIRMATION.pop(chat_id, None)
@@ -218,12 +218,12 @@ def handle_command(text, chat_id):
                     {"text": "❌ Cancel", "callback_data": "cancel"}
                 ]]
             })
-            send_telegram("⚠️ Are you sure you want to START the bot?", reply_markup=keyboard)
+            send_telegram("🏦 <b>INDODAX</b>\n⚠️ Are you sure you want to START the bot?", reply_markup=keyboard)
 
     elif cmd == "/help":
         send_telegram(
-            "🤖 <b>BOT COMMANDS</b>\n"
-            "/status - Bot status & IDR balance\n"
+            "🏦 <b>INDODAX BOT COMMANDS</b>\n"
+            "/status - Bot status & balance\n"
             "/portfolio - All assets & total value\n"
             "/trades - Recent trade history\n"
             "/analytics - Win rate, PnL, best/worst trade\n"

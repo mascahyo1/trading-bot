@@ -52,6 +52,7 @@ class TelegramNotifier:
     def notify_trade(self, symbol, side, price, amount=None, pnl=None):
         emoji = "🟢" if side == "BUY" else "🔴"
         msg = (
+            f"🏦 <b>INDODAX</b>\n"
             f"{emoji} <b>{side}</b> {symbol}\n"
             f"💰 Price: {price:,.0f} IDR\n"
         )
@@ -89,7 +90,7 @@ class TelegramNotifier:
 
     def notify_start(self, pairs, timeframe):
         msg = (
-            f"🚀 <b>BOT STARTED</b>\n"
+            f"🏦 <b>INDODAX BOT STARTED</b>\n"
             f"📊 Pairs: {', '.join(pairs)}\n"
             f"⏱ Timeframe: {timeframe}\n"
             f"🔔 Notifications: ON"
@@ -97,7 +98,7 @@ class TelegramNotifier:
         self.send(msg)
 
     def notify_stop(self, reason="User request"):
-        msg = f"🛑 <b>BOT STOPPED</b>\n📋 Reason: {reason}"
+        msg = f"🏦 <b>INDODAX</b>\n🛑 <b>BOT STOPPED</b>\n📋 Reason: {reason}"
         self.send(msg)
 
 

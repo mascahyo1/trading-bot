@@ -105,18 +105,18 @@ def main():
     errors = check_bot_health()
 
     if errors:
-        msg = "🔴 <b>BOT DOWN!</b>\n" + "\n".join(f"• {e}" for e in errors)
+        msg = "🏦 <b>INDODAX</b>\n🔴 <b>BOT DOWN!</b>\n" + "\n".join(f"• {e}" for e in errors)
         send_telegram(msg)
         print(f"ALERT: {errors}")
         return
 
     portfolio = get_portfolio()
     if not portfolio:
-        msg = "🟡 <b>BOT ALIVE</b>\n⚠️ Gagal cek portfolio"
+        msg = "🏦 <b>INDODAX</b>\n🟡 <b>BOT ALIVE</b>\n⚠️ Gagal cek portfolio"
         send_telegram(msg)
         return
 
-    lines = ["🟢 <b>BOT ALIVE</b>"]
+    lines = ["🏦 <b>INDODAX BOT ALIVE</b>"]
     for a in portfolio["assets"]:
         if a["idr"] > 100:
             lines.append(f"  {a['asset']}: {a['amount']:.6f} ≈ {a['idr']:,.0f} IDR")
