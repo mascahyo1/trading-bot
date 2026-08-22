@@ -28,7 +28,10 @@ TELEGRAM_CHAT_ID = ""
 
 def load_env():
     global TELEGRAM_TOKEN, TELEGRAM_CHAT_ID
-    with open(os.path.join(SCRIPT_DIR, ".env")) as f:
+    env_path = os.path.join(SCRIPT_DIR, ".env")
+    if not os.path.exists(env_path):
+        env_path = os.path.join(os.path.dirname(SCRIPT_DIR), ".env")
+    with open(env_path) as f:
         for line in f:
             line = line.strip()
             if "=" in line and not line.startswith("#"):
