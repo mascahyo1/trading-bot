@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Watchdog - Monitor trading bot health and send Telegram alerts
-Run via cron every 5 minutes: */5 * * * * /home/cahyo/trading-bot/venv/bin/python3 /home/cahyo/trading-bot/watchdog.py
+Watchdog - Monitor bot health + portfolio every 5 minutes via Telegram
+Cron: */5 * * * * /home/cahyo/trading-bot/venv/bin/python3 /home/cahyo/trading-bot/watchdog.py
 """
 import time
 import json
@@ -10,7 +10,6 @@ import urllib.request
 from datetime import datetime
 
 BOT_LOG = "/home/cahyo/trading-bot/logs/bot_error.log"
-HEARTBEAT_FILE = "/home/cahyo/trading-bot/logs/heartbeat.txt"
 TELEGRAM_TOKEN = ""
 TELEGRAM_CHAT_ID = ""
 
@@ -38,42 +37,51 @@ def send_telegram(text):
     except Exception:
         pass
 
+def get_portfolio():
+    """Get all balances and calculate IDR value"""
+    sys.path.insert(0, "/home/cahyo/trading-bot")
+    try:
+        from exchange import IndodaxExchange
+        ex = IndodaxExchange()
+
+        bal = ex.get_balance()
+        if bal.get("error"):
+            return None
+
+        total_idr = 0
+        assets = []
+        for b in bal.get("balances", []):
+            free = float(b.get("free", 0))
+            locked = float(b.get("locked", 0))
+            total = free + locked
+            if total > 0:
+                asset = b["asset"]
+                idr_val = total if asset == "IDR" else 0
+                if asset != "IDR":
+                    pair = f"{asset}/IDR"
+                    ticker = ex.fetch_ticker(pair)
+                    if ticker and ticker.get("last"):
+                        idr_val = total * ticker["last"]
+                total_idr += idr_val
+                assets.append({"asset": asset, "amount": total, "idr": idr_val})
+
+        return {"total_idr": total_idr, "assets": assets}
+    except Exception as e:
+        return None
+
 def check_bot_health():
     errors = []
-
     if not os.path.exists(BOT_LOG):
         errors.append("Log file not found")
     else:
         mod_time = os.path.getmtime(BOT_LOG)
         age_seconds = time.time() - mod_time
         if age_seconds > 1200:
-            errors.append(f"Log tidak update {age_seconds/60:.0f} min (bot mungkin stuck)")
-
-        try:
-            with open(BOT_LOG, "r") as f:
-                lines = f.readlines()
-                last_lines = lines[-20:] if len(lines) > 20 else lines
-                error_count = sum(1 for l in last_lines if "ERROR" in l)
-                if error_count > 10:
-                    errors.append(f"Error rate tinggi: {error_count} errors di 20 baris terakhir")
-        except Exception:
-            pass
-
+            errors.append(f"Log tidak update {age_seconds/60:.0f} min")
     result = os.popen("systemctl is-active trading-bot.service").read().strip()
     if result != "active":
         errors.append(f"Service: {result}")
-
     return errors
-
-def should_send_heartbeat():
-    if not os.path.exists(HEARTBEAT_FILE):
-        return True
-    last_heartbeat = os.path.getmtime(HEARTBEAT_FILE)
-    return (time.time() - last_heartbeat) > 14400
-
-def update_heartbeat():
-    with open(HEARTBEAT_FILE, "w") as f:
-        f.write(str(int(time.time())))
 
 def main():
     load_env()
@@ -83,19 +91,23 @@ def main():
         msg = "🔴 <b>BOT DOWN!</b>\n" + "\n".join(f"• {e}" for e in errors)
         send_telegram(msg)
         print(f"ALERT: {errors}")
-    elif should_send_heartbeat():
-        uptime = os.popen("systemctl show trading-bot.service --property=ActiveEnterTimestamp --value").read().strip()
-        msg = (
-            f"🟢 <b>BOT ALIVE</b>\n"
-            f"✅ Semua sistem normal\n"
-            f"⏱ Uptime: {uptime}\n"
-            f"🕐 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-        )
+        return
+
+    portfolio = get_portfolio()
+    if not portfolio:
+        msg = "🟡 <b>BOT ALIVE</b>\n⚠️ Gagal cek portfolio"
         send_telegram(msg)
-        update_heartbeat()
-        print(f"HEARTBEAT sent - {datetime.now().strftime('%H:%M:%S')}")
-    else:
-        print(f"OK - {datetime.now().strftime('%H:%M:%S')}")
+        return
+
+    lines = ["🟢 <b>BOT ALIVE</b>"]
+    for a in portfolio["assets"]:
+        if a["idr"] > 100:
+            lines.append(f"  {a['asset']}: {a['amount']:.6f} ≈ {a['idr']:,.0f} IDR")
+    lines.append(f"\n💰 <b>Total: {portfolio['total_idr']:,.0f} IDR</b>")
+    lines.append(f"🕐 {datetime.now().strftime('%H:%M:%S')}")
+
+    send_telegram("\n".join(lines))
+    print(f"HEARTBEAT - {datetime.now().strftime('%H:%M:%S')}")
 
 if __name__ == "__main__":
     main()
