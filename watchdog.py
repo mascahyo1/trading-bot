@@ -7,8 +7,14 @@ import time
 import json
 import os
 import sys
+import logging
 import urllib.request
 from datetime import datetime
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 BOT_LOG = "/home/cahyo/trading-bot/logs/bot_error.log"
 TELEGRAM_TOKEN = ""
@@ -16,7 +22,7 @@ TELEGRAM_CHAT_ID = ""
 
 def load_env():
     global TELEGRAM_TOKEN, TELEGRAM_CHAT_ID
-    with open("/home/cahyo/trading-bot/.env") as f:
+    with open(os.path.join(SCRIPT_DIR, ".env")) as f:
         for line in f:
             line = line.strip()
             if "=" in line and not line.startswith("#"):
@@ -40,10 +46,12 @@ def send_telegram(text):
 
 def get_portfolio():
     """Get all balances and calculate IDR value"""
-    sys.path.insert(0, "/home/cahyo/trading-bot")
+    sys.path.insert(0, SCRIPT_DIR)
     try:
         from exchange import IndodaxExchange
+        from strategy import RiskManager
         ex = IndodaxExchange()
+        rm = RiskManager()
 
         bal = ex.get_balance()
         if bal.get("error"):
@@ -66,8 +74,10 @@ def get_portfolio():
                 total_idr += idr_val
                 assets.append({"asset": asset, "amount": total, "idr": idr_val})
 
-        return {"total_idr": total_idr, "assets": assets}
+        daily_pnl = rm.get_daily_pnl()
+        return {"total_idr": total_idr, "assets": assets, "daily_pnl": daily_pnl}
     except Exception as e:
+        logger.error(f"Portfolio error: {e}")
         return None
 
 def check_bot_health():
@@ -105,6 +115,10 @@ def main():
         if a["idr"] > 100:
             lines.append(f"  {a['asset']}: {a['amount']:.6f} ≈ {a['idr']:,.0f} IDR")
     lines.append(f"\n💰 <b>Total: {portfolio['total_idr']:,.0f} IDR</b>")
+
+    daily_pnl = portfolio.get("daily_pnl", 0)
+    emoji = "📈" if daily_pnl >= 0 else "📉"
+    lines.append(f"{emoji} Daily PnL: {daily_pnl:+,.0f} IDR")
     lines.append(f"🕐 {datetime.now().strftime('%H:%M UTC')}")
 
     send_telegram("\n".join(lines))

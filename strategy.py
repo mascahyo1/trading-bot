@@ -10,6 +10,7 @@ from config import (
     POSITION_SIZE_USDT,
     MIN_ORDER_IDR,
     TRADE_HISTORY_FILE,
+    MAX_DAILY_LOSS_PCT,
 )
 
 logger = logging.getLogger(__name__)
@@ -58,6 +59,8 @@ class RiskManager:
     def __init__(self):
         self.positions = {}
         self.trade_history = self._load_history()
+        self.daily_loss_limit_pct = MAX_DAILY_LOSS_PCT
+        self.last_check_date = datetime.now().strftime("%Y-%m-%d")
 
     def _load_history(self):
         if os.path.exists(TRADE_HISTORY_FILE):
@@ -74,6 +77,22 @@ class RiskManager:
                 json.dump(self.trade_history, f, indent=2)
         except IOError as e:
             logger.error(f"Error saving trade history: {e}")
+
+    def get_daily_pnl(self):
+        today = datetime.now().strftime("%Y-%m-%d")
+        pnl = 0
+        for t in self.trade_history:
+            exit_time = t.get("exit_time", "")
+            if exit_time.startswith(today):
+                pnl += t.get("pnl_amount", 0)
+        return pnl
+
+    def is_daily_loss_limit_reached(self, balance):
+        daily_pnl = self.get_daily_pnl()
+        if daily_pnl >= 0:
+            return False
+        loss_pct = abs(daily_pnl) / balance if balance > 0 else 0
+        return loss_pct >= self.daily_loss_limit_pct
 
     def get_open_positions_count(self):
         return sum(1 for p in self.positions.values() if p.status == "open")
@@ -235,6 +254,10 @@ class TradingStrategy:
             if not self.risk_manager.can_open_position():
                 logger.info(f"Max positions reached ({MAX_OPEN_POSITIONS}), skipping buy")
                 return {"action": "hold", "analysis": analysis}
+
+            if self.risk_manager.is_daily_loss_limit_reached(balance):
+                logger.info(f"Daily loss limit reached, skipping buy")
+                return {"action": "hold", "reason": "daily_loss_limit", "analysis": analysis}
 
             amount = self.risk_manager.calculate_position_size(balance, current_price)
             return {

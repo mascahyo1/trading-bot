@@ -1,0 +1,252 @@
+#!/usr/bin/env python3
+"""
+Telegram Bot Command Handler
+Listen for commands and respond. Sensitive actions require confirmation.
+"""
+import json
+import os
+import time
+import logging
+import urllib.request
+import urllib.error
+import threading
+from datetime import datetime
+
+logger = logging.getLogger(__name__)
+
+TELEGRAM_TOKEN = ""
+TELEGRAM_CHAT_ID = ""
+BOT_INSTANCE = None
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+def load_env():
+    global TELEGRAM_TOKEN, TELEGRAM_CHAT_ID
+    with open(os.path.join(SCRIPT_DIR, ".env")) as f:
+        for line in f:
+            line = line.strip()
+            if "=" in line and not line.startswith("#"):
+                k, v = line.split("=", 1)
+                if k.strip() == "Telegram_Bot_Token":
+                    TELEGRAM_TOKEN = v.strip()
+                elif k.strip() == "Telegram_Chat_ID":
+                    TELEGRAM_CHAT_ID = v.strip()
+
+def send_telegram(text, reply_markup=None):
+    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
+        return
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "HTML"}
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
+    data = json.dumps(payload).encode()
+    req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"}, method="POST")
+    try:
+        urllib.request.urlopen(req, timeout=10)
+    except Exception as e:
+        logger.error(f"Telegram send error: {e}")
+
+def get_updates(offset=None):
+    if not TELEGRAM_TOKEN:
+        return []
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates"
+    params = {"timeout": 30, "allowed_updates": ["message"]}
+    if offset:
+        params["offset"] = offset
+    query = "&".join(f"{k}={v}" for k, v in params.items())
+    req = urllib.request.Request(f"{url}?{query}")
+    try:
+        with urllib.request.urlopen(req, timeout=35) as resp:
+            data = json.loads(resp.read().decode())
+            return data.get("result", [])
+    except Exception as e:
+        logger.error(f"getUpdates error: {e}")
+        return []
+
+def get_portfolio_text():
+    try:
+        sys.path.insert(0, SCRIPT_DIR)
+        from exchange import IndodaxExchange
+        ex = IndodaxExchange()
+        bal = ex.get_balance()
+        if bal.get("error"):
+            return "Error fetching portfolio"
+
+        total_idr = 0
+        lines = ["📊 <b>PORTFOLIO</b>"]
+        for b in bal.get("balances", []):
+            free = float(b.get("free", 0))
+            locked = float(b.get("locked", 0))
+            total = free + locked
+            if total > 0:
+                asset = b["asset"]
+                idr_val = total if asset == "IDR" else 0
+                if asset != "IDR":
+                    ticker = ex.fetch_ticker(f"{asset}/IDR")
+                    if ticker and ticker.get("last"):
+                        idr_val = total * ticker["last"]
+                total_idr += idr_val
+                if idr_val > 100:
+                    lines.append(f"  {asset}: {total:.6f} = {idr_val:,.0f} IDR")
+        lines.append(f"\n💰 <b>Total: {total_idr:,.0f} IDR</b>")
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Error: {e}"
+
+def get_status_text():
+    try:
+        sys.path.insert(0, SCRIPT_DIR)
+        from exchange import IndodaxExchange
+        ex = IndodaxExchange()
+        bal = ex.get_idr_balance()
+        lines = [
+            "🤖 <b>BOT STATUS</b>",
+            f"🟢 Status: Running",
+            f"💰 IDR Balance: {bal:,.0f} IDR",
+            f"🕐 {datetime.now().strftime('%H:%M:%S')}",
+        ]
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Error: {e}"
+
+def get_trades_text():
+    try:
+        history_file = os.path.join(SCRIPT_DIR, "trade_history.json")
+        if not os.path.exists(history_file):
+            return "📜 No trades yet"
+        with open(history_file) as f:
+            trades = json.load(f)
+        if not trades:
+            return "📜 No trades yet"
+        lines = ["📜 <b>RECENT TRADES</b>"]
+        for t in trades[-5:]:
+            pnl = t.get("pnl_amount", 0)
+            emoji = "✅" if pnl >= 0 else "❌"
+            lines.append(
+                f"  {emoji} {t['symbol']} {t['side']} @ {t['exit_price']:,.0f}\n"
+                f"     PnL: {pnl:+,.0f} IDR ({t.get('pnl_pct', 0):+.2f}%)"
+            )
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Error: {e}"
+
+PENDING_CONFIRMATION = {}
+
+def handle_command(text, chat_id):
+    text = text.strip()
+    cmd = text.lower().split()[0] if text else ""
+
+    if cmd == "/status":
+        send_telegram(get_status_text())
+
+    elif cmd == "/portfolio":
+        send_telegram(get_portfolio_text())
+
+    elif cmd == "/trades":
+        send_telegram(get_trades_text())
+
+    elif cmd == "/stop":
+        if chat_id in PENDING_CONFIRMATION and PENDING_CONFIRMATION[chat_id] == "stop":
+            send_telegram("🛑 Bot stopping...")
+            if BOT_INSTANCE:
+                BOT_INSTANCE.stop()
+            PENDING_CONFIRMATION.pop(chat_id, None)
+        else:
+            PENDING_CONFIRMATION[chat_id] = "stop"
+            keyboard = json.dumps({
+                "inline_keyboard": [[
+                    {"text": "✅ Yes, Stop Bot", "callback_data": "confirm_stop"},
+                    {"text": "❌ Cancel", "callback_data": "cancel"}
+                ]]
+            })
+            send_telegram("⚠️ Are you sure you want to STOP the bot?", reply_markup=keyboard)
+
+    elif cmd == "/start":
+        if chat_id in PENDING_CONFIRMATION and PENDING_CONFIRMATION[chat_id] == "start":
+            send_telegram("🚀 Bot starting...")
+            if BOT_INSTANCE:
+                BOT_INSTANCE.start()
+            PENDING_CONFIRMATION.pop(chat_id, None)
+        else:
+            PENDING_CONFIRMATION[chat_id] = "start"
+            keyboard = json.dumps({
+                "inline_keyboard": [[
+                    {"text": "✅ Yes, Start Bot", "callback_data": "confirm_start"},
+                    {"text": "❌ Cancel", "callback_data": "cancel"}
+                ]]
+            })
+            send_telegram("⚠️ Are you sure you want to START the bot?", reply_markup=keyboard)
+
+    elif cmd == "/help":
+        send_telegram(
+            "🤖 <b>BOT COMMANDS</b>\n"
+            "/status - Bot status & balance\n"
+            "/portfolio - All assets & total value\n"
+            "/trades - Recent trade history\n"
+            "/stop - Stop bot (with confirmation)\n"
+            "/start - Start bot (with confirmation)\n"
+            "/help - Show this message"
+        )
+
+    elif text.startswith("/"):
+        send_telegram("Unknown command. Type /help for available commands.")
+
+def handle_callback(data, chat_id):
+    if data == "confirm_stop":
+        send_telegram("🛑 Bot stopping...")
+        if BOT_INSTANCE:
+            BOT_INSTANCE.stop()
+        PENDING_CONFIRMATION.pop(chat_id, None)
+    elif data == "confirm_start":
+        send_telegram("🚀 Bot starting...")
+        if BOT_INSTANCE:
+            BOT_INSTANCE.start()
+        PENDING_CONFIRMATION.pop(chat_id, None)
+    elif data == "cancel":
+        send_telegram("✅ Cancelled")
+        PENDING_CONFIRMATION.pop(chat_id, None)
+
+import sys
+
+class TelegramCommandHandler:
+    def __init__(self, bot_instance=None):
+        global BOT_INSTANCE
+        load_env()
+        BOT_INSTANCE = bot_instance
+        self.running = False
+        self.offset = None
+        self.thread = None
+
+    def start(self):
+        self.running = True
+        self.thread = threading.Thread(target=self._poll_loop, daemon=True)
+        self.thread.start()
+        logger.info("Telegram command handler started")
+
+    def stop(self):
+        self.running = False
+        if self.thread:
+            self.thread.join(timeout=5)
+
+    def _poll_loop(self):
+        while self.running:
+            try:
+                updates = get_updates(self.offset)
+                for update in updates:
+                    self.offset = update["update_id"] + 1
+                    if "message" in update:
+                        msg = update["message"]
+                        chat_id = msg.get("chat", {}).get("id")
+                        if chat_id and TELEGRAM_CHAT_ID and str(chat_id) == TELEGRAM_CHAT_ID:
+                            text = msg.get("text", "")
+                            if text:
+                                handle_command(text, chat_id)
+                    elif "callback_query" in update:
+                        cb = update["callback_query"]
+                        chat_id = cb.get("message", {}).get("chat", {}).get("id")
+                        data = cb.get("data")
+                        if chat_id and data:
+                            handle_callback(data, chat_id)
+            except Exception as e:
+                logger.error(f"Poll error: {e}")
+                time.sleep(5)

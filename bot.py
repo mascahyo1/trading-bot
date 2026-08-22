@@ -1,9 +1,10 @@
 import time
 import logging
 import signal
+import os
 import sys
 import threading
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from config import (
     TRADING_PAIRS, INTERVAL_SECONDS, CANDLESTICK_TIMEFRAME,
@@ -15,6 +16,7 @@ from analyzer import MarketAnalyzer
 from strategy import RiskManager, TradingStrategy
 from notifier import setup_logger, TradeNotifier
 from telegram_notifier import TelegramNotifier
+from telegram_commands import TelegramCommandHandler
 
 try:
     import msvcrt
@@ -38,6 +40,7 @@ class ProductionBot:
         self.daily_pnl = 0
         self.trades_today = 0
         self._stop_event = threading.Event()
+        self.telegram_cmd = TelegramCommandHandler(bot_instance=self)
 
     def get_balance(self):
         return self.exchange.get_idr_balance()
@@ -216,6 +219,7 @@ class ProductionBot:
         self.logger.info("=" * 65)
 
         self.telegram.notify_start(TRADING_PAIRS, CANDLESTICK_TIMEFRAME)
+        self.telegram_cmd.start()
 
         while self.running:
             try:
@@ -239,6 +243,12 @@ class ProductionBot:
     def _signal_handler(self, signum, frame):
         self.logger.info(f"Signal {signum} received")
         self.running = False
+
+    def stop(self):
+        self.running = False
+        self.logger.info("Bot stopping via Telegram...")
+        self._shutdown()
+        os._exit(0)
 
     def _shutdown(self):
         self.logger.info("=" * 65)
