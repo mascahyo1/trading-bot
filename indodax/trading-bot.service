@@ -13,12 +13,6 @@ RestartSec=30
 StandardOutput=journal
 StandardError=journal
 
-# Security
-NoNewPrivileges=true
-ProtectSystem=strict
-ReadWritePaths=/home/cahyo/trading/indodax
-
-# Environment
 Environment=PYTHONUNBUFFERED=1
 
 [Install]
