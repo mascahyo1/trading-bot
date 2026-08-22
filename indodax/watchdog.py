@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-BOT_LOG = "/home/cahyo/trading-bot/logs/bot_error.log"
+BOT_LOG = os.path.join(SCRIPT_DIR, "logs", "bot_error.log")
 TELEGRAM_TOKEN = ""
 TELEGRAM_CHAT_ID = ""
 
