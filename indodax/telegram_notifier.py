@@ -92,7 +92,7 @@ class TelegramNotifier:
             f"💰 Cash: {balance:,.0f} IDR\n"
             f"📈 Unrealized: {unrealized:+,.0f} IDR\n"
             f"💎 Total: {total_portfolio:,.0f} IDR\n"
-        }
+        )
         if positions:
             msg += f"\n<b>POSITIONS</b>\n"
             for sym, pos in positions.items():
