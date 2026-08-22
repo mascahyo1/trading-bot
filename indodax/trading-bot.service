@@ -6,7 +6,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=cahyo
-WorkingDirectory=/home/cahyo/trading/indodax
+WorkingDirectory=/home/cahyo/trading-bot/indodax
 ExecStart=/home/cahyo/trading-bot/venv/bin/python3 /home/cahyo/trading/indodax/bot.py
 Restart=always
 RestartSec=30
