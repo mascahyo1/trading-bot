@@ -1,0 +1,20 @@
+{
+  "name": "ajaib-trading-bot",
+  "version": "1.0.0",
+  "description": "Automated trading bot for Ajaib using Playwright",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "login": "node src/login.js",
+    "dev": "node --watch src/index.js"
+  },
+  "dependencies": {
+    "playwright": "^1.40.0",
+    "node-cron": "^3.0.3",
+    "winston": "^3.11.0",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.40.0"
+  }
+}
