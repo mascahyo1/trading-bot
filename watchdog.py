@@ -119,6 +119,22 @@ def main():
     daily_pnl = portfolio.get("daily_pnl", 0)
     emoji = "📈" if daily_pnl >= 0 else "📉"
     lines.append(f"{emoji} Daily PnL: {daily_pnl:+,.0f} IDR")
+
+    try:
+        history_file = os.path.join(SCRIPT_DIR, "trade_history.json")
+        if os.path.exists(history_file):
+            with open(history_file) as f:
+                trades = json.load(f)
+            if trades:
+                total_trades = len(trades)
+                wins = sum(1 for t in trades if t.get("pnl_amount", 0) > 0)
+                total_pnl = sum(t.get("pnl_amount", 0) for t in trades)
+                win_rate = wins / total_trades * 100
+                lines.append(f"📊 Win Rate: {win_rate:.0f}% ({total_trades} trades)")
+                lines.append(f"💹 All-Time PnL: {total_pnl:+,.0f} IDR")
+    except Exception:
+        pass
+
     lines.append(f"🕐 {datetime.now().strftime('%H:%M UTC')}")
 
     send_telegram("\n".join(lines))

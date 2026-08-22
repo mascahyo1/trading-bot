@@ -130,6 +130,45 @@ def get_trades_text():
     except Exception as e:
         return f"Error: {e}"
 
+def get_analytics_text():
+    try:
+        history_file = os.path.join(SCRIPT_DIR, "trade_history.json")
+        if not os.path.exists(history_file):
+            return "📊 No trade data yet"
+        with open(history_file) as f:
+            trades = json.load(f)
+        if not trades:
+            return "📊 No trade data yet"
+
+        total_trades = len(trades)
+        wins = [t for t in trades if t.get("pnl_amount", 0) > 0]
+        losses = [t for t in trades if t.get("pnl_amount", 0) <= 0]
+        total_pnl = sum(t.get("pnl_amount", 0) for t in trades)
+        win_rate = len(wins) / total_trades * 100 if total_trades > 0 else 0
+
+        avg_win = sum(t["pnl_amount"] for t in wins) / len(wins) if wins else 0
+        avg_loss = sum(t["pnl_amount"] for t in losses) / len(losses) if losses else 0
+
+        best = max(trades, key=lambda t: t.get("pnl_amount", 0)) if trades else None
+        worst = min(trades, key=lambda t: t.get("pnl_amount", 0)) if trades else None
+
+        lines = [
+            "📊 <b>PERFORMANCE ANALYTICS</b>",
+            f"Total Trades: {total_trades}",
+            f"Win Rate: {win_rate:.1f}% ({len(wins)}W/{len(losses)}L)",
+            f"Total PnL: {total_pnl:+,.0f} IDR",
+            f"Avg Win: {avg_win:+,.0f} IDR",
+            f"Avg Loss: {avg_loss:+,.0f} IDR",
+        ]
+        if best:
+            lines.append(f"Best Trade: {best['symbol']} {best['pnl_amount']:+,.0f} IDR")
+        if worst:
+            lines.append(f"Worst Trade: {worst['symbol']} {worst['pnl_amount']:+,.0f} IDR")
+
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Error: {e}"
+
 PENDING_CONFIRMATION = {}
 
 def handle_command(text, chat_id):
@@ -144,6 +183,9 @@ def handle_command(text, chat_id):
 
     elif cmd == "/trades":
         send_telegram(get_trades_text())
+
+    elif cmd == "/analytics" or cmd == "/stats":
+        send_telegram(get_analytics_text())
 
     elif cmd == "/stop":
         if chat_id in PENDING_CONFIRMATION and PENDING_CONFIRMATION[chat_id] == "stop":
@@ -180,9 +222,10 @@ def handle_command(text, chat_id):
     elif cmd == "/help":
         send_telegram(
             "🤖 <b>BOT COMMANDS</b>\n"
-            "/status - Bot status & balance\n"
+            "/status - Bot status & IDR balance\n"
             "/portfolio - All assets & total value\n"
             "/trades - Recent trade history\n"
+            "/analytics - Win rate, PnL, best/worst trade\n"
             "/stop - Stop bot (with confirmation)\n"
             "/start - Start bot (with confirmation)\n"
             "/help - Show this message"
