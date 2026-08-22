@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Watchdog - Monitor bot health + portfolio every 5 minutes via Telegram
-Cron: */5 * * * * /home/cahyo/trading-bot/venv/bin/python3 /home/cahyo/trading-bot/watchdog.py
+Cron: */5 * * * * /home/cahyo/trading/venv/bin/python3 /home/cahyo/trading/indodax/watchdog.py
 """
 import time
 import json
@@ -10,6 +10,11 @@ import sys
 import logging
 import urllib.request
 from datetime import datetime
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, SCRIPT_DIR)
+os.chdir(SCRIPT_DIR)
+
 from config import now_jakarta, format_datetime
 
 logging.basicConfig(level=logging.INFO)

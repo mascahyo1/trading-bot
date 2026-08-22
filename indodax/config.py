@@ -2,8 +2,10 @@ import os
 from dotenv import load_dotenv
 from datetime import datetime, timezone, timedelta
 
-os.chdir(os.path.dirname(os.path.abspath(__file__)))
-load_dotenv()
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+os.chdir(SCRIPT_DIR)
+load_dotenv(os.path.join(SCRIPT_DIR, ".env"))
+load_dotenv(os.path.join(os.path.dirname(SCRIPT_DIR), ".env"))
 
 TZ_JAKARTA = timezone(timedelta(hours=7))
 DATETIME_FORMAT = "%H:%M:%S %A, %d %B %Y"
