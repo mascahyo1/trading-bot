@@ -58,5 +58,4 @@ MIN_ORDER_IDR = 10000
 LLM_WEIGHT = 0.40
 TECHNICAL_WEIGHT = 0.60
 
-LOG_FILE = "trading_bot.log"
 TRADE_HISTORY_FILE = "trade_history.json"

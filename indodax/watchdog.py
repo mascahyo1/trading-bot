@@ -22,7 +22,13 @@ logger = logging.getLogger(__name__)
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-BOT_LOG = os.path.join(SCRIPT_DIR, "logs", "bot_error.log")
+LOG_DIR = os.path.join(SCRIPT_DIR, "logs")
+
+def get_today_log():
+    today = now_jakarta().strftime("%Y-%m-%d")
+    return os.path.join(LOG_DIR, f"{today}.log")
+
+BOT_LOG = get_today_log()
 TELEGRAM_TOKEN = ""
 TELEGRAM_CHAT_ID = ""
 

@@ -1,31 +1,97 @@
 import logging
 import os
-from datetime import datetime
-from config import LOG_FILE, TZ_JAKARTA
+import glob
+from datetime import datetime, timedelta
+from config import TZ_JAKARTA
+
+LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+MAX_LOG_DAYS = 7
+
+
+class DailyFileHandler(logging.Handler):
+    def __init__(self, log_dir):
+        super().__init__()
+        self.log_dir = log_dir
+        self._current_date = None
+        self._file_handler = None
+        self._ensure_dir()
+        self._rotate_handler()
+
+    def _ensure_dir(self):
+        if not os.path.exists(self.log_dir):
+            os.makedirs(self.log_dir, exist_ok=True)
+
+    def _today(self):
+        return datetime.now(TZ_JAKARTA).strftime("%Y-%m-%d")
+
+    def _rotate_handler(self):
+        today = self._today()
+        if today == self._current_date:
+            return
+
+        if self._file_handler:
+            self._file_handler.close()
+            self.removeHandler(self._file_handler)
+
+        log_file = os.path.join(self.log_dir, f"{today}.log")
+        self._file_handler = logging.FileHandler(log_file, encoding="utf-8")
+        self._file_handler.setLevel(logging.INFO)
+        formatter = logging.Formatter(
+            "%(asctime)s | %(levelname)-8s | %(name)-15s | %(message)s",
+            datefmt="%H:%M:%S %A, %d %B %Y",
+        )
+        formatter.converter = lambda *args: datetime.now(TZ_JAKARTA).timetuple()
+        self._file_handler.setFormatter(formatter)
+        self.addHandler(self._file_handler)
+        self._current_date = today
+
+    def emit(self, record):
+        self._rotate_handler()
+        super().emit(record)
+
+    def close(self):
+        if self._file_handler:
+            self._file_handler.close()
+        super().close()
+
+
+def cleanup_old_logs():
+    cutoff = datetime.now(TZ_JAKARTA) - timedelta(days=MAX_LOG_DAYS)
+    cutoff_str = cutoff.strftime("%Y-%m-%d")
+
+    if not os.path.exists(LOG_DIR):
+        return
+
+    for log_file in glob.glob(os.path.join(LOG_DIR, "*.log")):
+        basename = os.path.basename(log_file)
+        date_str = basename.replace(".log", "")
+        try:
+            if date_str < cutoff_str:
+                os.remove(log_file)
+        except Exception:
+            pass
 
 
 def setup_logger():
-    log_dir = os.path.dirname(LOG_FILE)
-    if log_dir and not os.path.exists(log_dir):
-        os.makedirs(log_dir, exist_ok=True)
+    cleanup_old_logs()
 
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
+
+    daily_handler = DailyFileHandler(LOG_DIR)
+    root_logger.addHandler(daily_handler)
+
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
     formatter = logging.Formatter(
         "%(asctime)s | %(levelname)-8s | %(name)-15s | %(message)s",
         datefmt="%H:%M:%S %A, %d %B %Y",
     )
     formatter.converter = lambda *args: datetime.now(TZ_JAKARTA).timetuple()
-
-    file_handler = logging.FileHandler(LOG_FILE, encoding="utf-8")
-    file_handler.setLevel(logging.INFO)
-    file_handler.setFormatter(formatter)
-
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.INFO)
     console_handler.setFormatter(formatter)
-
-    root_logger = logging.getLogger()
-    root_logger.setLevel(logging.INFO)
-    root_logger.addHandler(file_handler)
     root_logger.addHandler(console_handler)
 
     return root_logger
