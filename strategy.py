@@ -86,8 +86,8 @@ class RiskManager:
         position_value = min(POSITION_SIZE_USDT, risk_amount)
         min_value = MIN_ORDER_IDR * 1.5
         if position_value < min_value:
-            if balance >= min_value:
-                position_value = min_value
+            if balance >= MIN_ORDER_IDR:
+                position_value = balance * 0.95
             else:
                 return 0
         amount = position_value / current_price
