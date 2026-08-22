@@ -115,7 +115,7 @@ class ProductionBot:
                 results.append(analysis)
             except Exception as e:
                 self.logger.warning(f"[{symbol}] Scan error: {e}")
-            time.sleep(1)
+            time.sleep(0.5)
         return results
 
     def get_top_candidates(self, results, signal_type="buy"):

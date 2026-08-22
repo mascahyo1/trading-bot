@@ -88,17 +88,13 @@ class IndodaxExchange:
             return None
 
     def fetch_ohlcv(self, symbol, timeframe="15m", limit=100):
-        for attempt in range(3):
-            try:
-                ohlcv = self.ccxt.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
-                if ohlcv and len(ohlcv) > 0:
-                    return ohlcv
-                logger.warning(f"OHLCV empty for {symbol}, attempt {attempt+1}")
-            except Exception as e:
-                logger.warning(f"OHLCV attempt {attempt+1} failed for {symbol}: {e}")
-            time.sleep(2)
-        logger.error(f"OHLCV failed for {symbol} after 3 attempts")
-        return None
+        try:
+            ohlcv = self.ccxt.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
+            if ohlcv and len(ohlcv) > 0:
+                return ohlcv
+            return None
+        except Exception:
+            return None
 
     def fetch_ticker(self, symbol):
         try:
