@@ -95,6 +95,24 @@ class ProductionBot:
             self.logger.error(f"Sell failed: {order}")
         return False
 
+    def execute_sell_partial(self, symbol, current_price, amount):
+        pair = INDODAX_SYMBOL_MAP.get(symbol, symbol.replace("/", ""))
+        order = self.exchange.create_order(
+            symbol=pair,
+            side="SELL",
+            order_type="MARKET",
+            quantity=amount,
+        )
+        if order and not order.get("error"):
+            pnl = (current_price - self.risk_manager.positions[symbol].entry_price) * amount
+            self.notifier.notify_trade(symbol, "PARTIAL SELL", current_price, amount, pnl)
+            self.telegram.notify_trade(symbol, "PARTIAL SELL", current_price, amount, pnl)
+            self.daily_pnl += pnl
+            self.trades_today += 1
+            return True
+        self.logger.error(f"Partial sell failed: {order}")
+        return False
+
     def scan_all_pairs(self):
         results = []
         for symbol in ALL_PAIRS:
@@ -186,6 +204,12 @@ class ProductionBot:
                     self.logger.warning(f"[{symbol}] Need {est_cost:,.0f}, have {balance:,.0f}")
                     return
                 self.execute_buy(symbol, amount, current_price)
+
+            elif action == "partial_sell":
+                amount = decision["amount"]
+                reason = decision.get("reason", "tp1_hit")
+                self.logger.info(f"[{symbol}] Partial sell: {reason}")
+                self.execute_sell_partial(symbol, current_price, amount)
 
             elif action == "close":
                 reason = decision.get("reason", "signal")

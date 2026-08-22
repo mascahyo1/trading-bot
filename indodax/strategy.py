@@ -25,6 +25,7 @@ class Position:
     def __init__(self, symbol, entry_price, amount, side="long"):
         self.symbol = symbol
         self.entry_price = entry_price
+        self.initial_amount = amount
         self.amount = amount
         self.side = side
         self.stop_loss = entry_price * (1 - STOP_LOSS_PCT)
@@ -33,6 +34,9 @@ class Position:
         self.trailing_stop_pct = 0.05
         self.entry_time = now_jakarta().isoformat()
         self.status = "open"
+        self.partial_sell_count = 0
+        self.tp1_pct = 0.03
+        self.tp2_pct = 0.06
 
     def update_trailing_stop(self, current_price):
         if current_price > self.highest_price:
@@ -46,17 +50,40 @@ class Position:
     def check_trailing_stop(self, current_price):
         return current_price <= self.stop_loss
 
+    def get_tp1_price(self):
+        return self.entry_price * (1 + self.tp1_pct)
+
+    def get_tp2_price(self):
+        return self.entry_price * (1 + self.tp2_pct)
+
+    def should_partial_sell(self, current_price):
+        tp1 = self.get_tp1_price()
+        if self.partial_sell_count == 0 and current_price >= tp1:
+            return True
+        return False
+
+    def should_full_sell(self, current_price):
+        tp2 = self.get_tp2_price()
+        if self.partial_sell_count >= 1 and current_price >= tp2:
+            return True
+        return False
+
+    def partial_sell_amount(self):
+        return round(self.initial_amount * 0.5, 8)
+
     def to_dict(self):
         return {
             "symbol": self.symbol,
             "entry_price": self.entry_price,
             "amount": self.amount,
+            "initial_amount": self.initial_amount,
             "side": self.side,
             "stop_loss": self.stop_loss,
             "take_profit": self.take_profit,
             "highest_price": self.highest_price,
             "entry_time": self.entry_time,
             "status": self.status,
+            "partial_sell_count": self.partial_sell_count,
         }
 
 
@@ -242,6 +269,25 @@ class TradingStrategy:
                 return {
                     "action": "close",
                     "reason": f"trailing_stop (peak: {pos.highest_price:.0f})",
+                    "analysis": analysis,
+                    "amount": pos.amount,
+                }
+
+            if pos.should_partial_sell(current_price):
+                partial_amount = pos.partial_sell_amount()
+                pos.partial_sell_count += 1
+                pos.amount -= partial_amount
+                return {
+                    "action": "partial_sell",
+                    "reason": f"tp1_hit (+3% @ {pos.get_tp1_price():,.0f})",
+                    "analysis": analysis,
+                    "amount": partial_amount,
+                }
+
+            if pos.should_full_sell(current_price):
+                return {
+                    "action": "close",
+                    "reason": f"tp2_hit (+6% @ {pos.get_tp2_price():,.0f})",
                     "analysis": analysis,
                     "amount": pos.amount,
                 }
