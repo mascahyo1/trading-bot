@@ -31,7 +31,6 @@ class DailyFileHandler(logging.Handler):
 
         if self._file_handler:
             self._file_handler.close()
-            self.removeHandler(self._file_handler)
 
         log_file = os.path.join(self.log_dir, f"{today}.log")
         self._file_handler = logging.FileHandler(log_file, encoding="utf-8")
@@ -42,12 +41,12 @@ class DailyFileHandler(logging.Handler):
         )
         formatter.converter = lambda *args: datetime.now(TZ_JAKARTA).timetuple()
         self._file_handler.setFormatter(formatter)
-        self.addHandler(self._file_handler)
         self._current_date = today
 
     def emit(self, record):
         self._rotate_handler()
-        super().emit(record)
+        if self._file_handler:
+            self._file_handler.emit(record)
 
     def close(self):
         if self._file_handler:
