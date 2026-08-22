@@ -179,19 +179,19 @@ def handle_command(text, chat_id):
     text = text.strip()
     cmd = text.lower().split()[0] if text else ""
 
-    if cmd == "/status":
+    if cmd == "/status-indodax":
         send_telegram("🏦 <b>INDODAX</b>\n" + get_status_text())
 
-    elif cmd == "/portfolio":
+    elif cmd == "/portfolio-indodax":
         send_telegram("🏦 <b>INDODAX</b>\n" + get_portfolio_text())
 
-    elif cmd == "/trades":
+    elif cmd == "/trades-indodax":
         send_telegram("🏦 <b>INDODAX</b>\n" + get_trades_text())
 
-    elif cmd == "/analytics" or cmd == "/stats":
+    elif cmd == "/analytics-indodax" or cmd == "/stats-indodax":
         send_telegram("🏦 <b>INDODAX</b>\n" + get_analytics_text())
 
-    elif cmd == "/stop":
+    elif cmd == "/stop-indodax":
         if chat_id in PENDING_CONFIRMATION and PENDING_CONFIRMATION[chat_id] == "stop":
             send_telegram("🏦 <b>INDODAX</b>\n🛑 Bot stopping...")
             if BOT_INSTANCE:
@@ -207,7 +207,7 @@ def handle_command(text, chat_id):
             })
             send_telegram("🏦 <b>INDODAX</b>\n⚠️ Are you sure you want to STOP the bot?", reply_markup=keyboard)
 
-    elif cmd == "/start":
+    elif cmd == "/start-indodax":
         if chat_id in PENDING_CONFIRMATION and PENDING_CONFIRMATION[chat_id] == "start":
             send_telegram("🏦 <b>INDODAX</b>\n🚀 Bot starting...")
             if BOT_INSTANCE:
@@ -226,12 +226,12 @@ def handle_command(text, chat_id):
     elif cmd == "/help":
         send_telegram(
             "🏦 <b>INDODAX BOT COMMANDS</b>\n"
-            "/status - Bot status & balance\n"
-            "/portfolio - All assets & total value\n"
-            "/trades - Recent trade history\n"
-            "/analytics - Win rate, PnL, best/worst trade\n"
-            "/stop - Stop bot (with confirmation)\n"
-            "/start - Start bot (with confirmation)\n"
+            "/status-indodax - Bot status & balance\n"
+            "/portfolio-indodax - All assets & total value\n"
+            "/trades-indodax - Recent trade history\n"
+            "/analytics-indodax - Win rate, PnL, best/worst trade\n"
+            "/stop-indodax - Stop bot (with confirmation)\n"
+            "/start-indodax - Start bot (with confirmation)\n"
             "/help - Show this message"
         )
 
