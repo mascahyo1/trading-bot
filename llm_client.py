@@ -1,0 +1,135 @@
+import json
+import logging
+import urllib.request
+import urllib.error
+from config import LLM_BASE_URL, LLM_API_KEY, LLM_MODEL
+
+logger = logging.getLogger(__name__)
+
+
+class LLMClient:
+    def __init__(self):
+        self.base_url = LLM_BASE_URL.rstrip("/")
+        self.api_key = LLM_API_KEY
+        self.model = LLM_MODEL
+        self.enabled = bool(self.base_url and self.api_key)
+
+    def _call_api(self, messages, temperature=0.3, max_tokens=500):
+        if not self.enabled:
+            return None
+
+        url = f"{self.base_url}/chat/completions"
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}",
+        }
+
+        data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(url, data=data, headers=headers, method="POST")
+
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                result = json.loads(resp.read().decode("utf-8"))
+                message = result["choices"][0]["message"]
+                content = message.get("content", "").strip()
+                reasoning = message.get("reasoning_content", "")
+                return self._parse_response(content, reasoning)
+        except urllib.error.HTTPError as e:
+            body = e.read().decode("utf-8", errors="replace")
+            logger.error(f"LLM API HTTP {e.code}: {body[:200]}")
+            return None
+        except Exception as e:
+            logger.error(f"LLM API error: {e}")
+            return None
+
+    def _parse_response(self, content, reasoning=""):
+        try:
+            return json.loads(content)
+        except json.JSONDecodeError:
+            pass
+
+        import re
+        json_match = re.search(r"\{[^{}]*\}", content, re.DOTALL)
+        if json_match:
+            try:
+                return json.loads(json_match.group())
+            except json.JSONDecodeError:
+                pass
+
+        content_lower = content.lower()
+        if "buy" in content_lower and "sell" not in content_lower:
+            signal = "buy"
+        elif "sell" in content_lower and "buy" not in content_lower:
+            signal = "sell"
+        elif "hold" in content_lower:
+            signal = "hold"
+        else:
+            signal = "hold"
+
+        return {
+            "signal": signal,
+            "confidence": 0.5,
+            "reasoning": content[:200] if content else reasoning[:200],
+            "risk_level": "medium",
+        }
+
+    def analyze_market(self, symbol, indicators, current_price):
+        if not self.enabled:
+            return None
+
+        system_prompt = """You are an expert cryptocurrency trading AI. Analyze the provided technical indicators and market data to generate a trading signal.
+
+Rules:
+- Consider the overall trend, momentum, volatility, and volume
+- Be conservative - only signal BUY/SELL when there's clear confirmation from multiple indicators
+- RSI < 30 = oversold (bullish), RSI > 70 = overbought (bearish)
+- MACD histogram turning positive = bullish momentum, negative = bearish
+- Price above EMA21 and EMA50 = uptrend, below = downtrend
+- Price touching Bollinger lower band = potential bounce, upper band = potential reversal
+- High volume confirms the signal strength
+
+IMPORTANT: End your response with a JSON object on its own line:
+{"signal": "buy" or "sell" or "hold", "confidence": 0.0-1.0, "reasoning": "brief explanation", "risk_level": "low" or "medium" or "high"}"""
+
+        user_data = f"""
+Symbol: {symbol}
+Current Price: {current_price:,.2f} IDR
+
+Technical Indicators:
+- RSI (14): {indicators.get('rsi', 'N/A')}
+- MACD Line: {indicators.get('macd', 'N/A')}
+- MACD Signal: {indicators.get('macd_signal', 'N/A')}
+- MACD Histogram: {indicators.get('macd_histogram', 'N/A')}
+- ATR (14): {indicators.get('atr', 'N/A')}
+- EMA 9: {indicators.get('ema_9', 'N/A')}
+- EMA 21: {indicators.get('ema_21', 'N/A')}
+- EMA 50: {indicators.get('ema_50', 'N/A')}
+- Volume Signal: {indicators.get('volume_signal', 'N/A')}
+
+Price vs EMAs:
+- vs EMA9: {((current_price / indicators.get('ema_9', current_price)) - 1) * 100:.2f}%
+- vs EMA21: {((current_price / indicators.get('ema_21', current_price)) - 1) * 100:.2f}%
+- vs EMA50: {((current_price / indicators.get('ema_50', current_price)) - 1) * 100:.2f}%
+
+What is your trading decision?"""
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_data},
+        ]
+
+        result = self._call_api(messages)
+        if result:
+            logger.info(
+                f"LLM [{symbol}] Signal: {result.get('signal', 'N/A')} | "
+                f"Confidence: {result.get('confidence', 'N/A')} | "
+                f"Risk: {result.get('risk_level', 'N/A')}"
+            )
+        return result
