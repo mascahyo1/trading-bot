@@ -99,6 +99,8 @@ class RiskManager:
                         entry_price = ticker["last"]
                         self.positions[symbol] = Position(symbol, entry_price, free)
                         logger.info(f"Loaded position from exchange: {symbol} amount={free} entry={entry_price:.0f}")
+
+    def get_daily_pnl(self):
         today = now_jakarta().strftime("%Y-%m-%d")
         pnl = 0
         for t in self.trade_history:
