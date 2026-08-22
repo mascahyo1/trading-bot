@@ -83,7 +83,22 @@ class RiskManager:
         except IOError as e:
             logger.error(f"Error saving trade history: {e}")
 
-    def get_daily_pnl(self):
+    def sync_positions_from_exchange(self, exchange):
+        balance = exchange.get_balance()
+        if balance.get("error"):
+            return
+
+        for b in balance.get("balances", []):
+            asset = b["asset"]
+            free = float(b.get("free", 0))
+            if free > 0 and asset != "IDR":
+                symbol = f"{asset}/IDR"
+                if symbol not in self.positions or self.positions[symbol].status != "open":
+                    ticker = exchange.fetch_ticker(symbol)
+                    if ticker and ticker.get("last"):
+                        entry_price = ticker["last"]
+                        self.positions[symbol] = Position(symbol, entry_price, free)
+                        logger.info(f"Loaded position from exchange: {symbol} amount={free} entry={entry_price:.0f}")
         today = now_jakarta().strftime("%Y-%m-%d")
         pnl = 0
         for t in self.trade_history:

@@ -217,6 +217,8 @@ class ProductionBot:
         self.logger.info(f"Scanning {len(ALL_PAIRS)} pairs...")
         self.logger.info("-" * 65)
 
+        self.strategy.risk_manager.sync_positions_from_exchange(self.exchange)
+
         all_results = self.scan_all_pairs()
         buy_candidates = self.get_top_candidates(all_results, "buy")
         sell_candidates = self.get_top_candidates(all_results, "sell")
