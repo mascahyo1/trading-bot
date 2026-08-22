@@ -11,7 +11,7 @@ def load_history():
             return json.load(f)
     return []
 
-def analyze_performance():
+def full_report():
     trades = load_history()
     if not trades:
         return "No trades yet"
@@ -25,23 +25,31 @@ def analyze_performance():
     avg_win = sum(t["pnl_amount"] for t in wins) / len(wins) if wins else 0
     avg_loss = sum(t["pnl_amount"] for t in losses) / len(losses) if losses else 0
 
-    best_trade = max(trades, key=lambda t: t.get("pnl_amount", 0)) if trades else None
-    worst_trade = min(trades, key=lambda t: t.get("pnl_amount", 0)) if trades else None
+    best = max(trades, key=lambda t: t.get("pnl_amount", 0))
+    worst = min(trades, key=lambda t: t.get("pnl_amount", 0))
 
     lines = [
-        "📊 <b>PERFORMANCE ANALYTICS</b>",
+        "📊 <b>FULL PERFORMANCE REPORT</b>",
         f"Total Trades: {total_trades}",
+        f"Wins: {len(wins)} | Losses: {len(losses)}",
         f"Win Rate: {win_rate:.1f}%",
+        f"",
         f"Total PnL: {total_pnl:+,.0f} IDR",
         f"Avg Win: {avg_win:+,.0f} IDR",
         f"Avg Loss: {avg_loss:+,.0f} IDR",
+        f"Best Trade: {best['symbol']} {best['pnl_amount']:+,.0f} IDR ({best.get('pnl_pct', 0):+.2f}%)",
+        f"Worst Trade: {worst['symbol']} {worst['pnl_amount']:+,.0f} IDR ({worst.get('pnl_pct', 0):+.2f}%)",
+        f"",
+        f"📜 <b>TRADE HISTORY</b>",
     ]
-    if best_trade:
-        lines.append(f"Best: {best_trade['symbol']} {best_trade['pnl_amount']:+,.0f} IDR")
-    if worst_trade:
-        lines.append(f"Worst: {worst_trade['symbol']} {worst_trade['pnl_amount']:+,.0f} IDR")
-
+    for t in trades[-10:]:
+        pnl = t.get("pnl_amount", 0)
+        emoji = "✅" if pnl >= 0 else "❌"
+        lines.append(
+            f"{emoji} {t['symbol']} {t['side']} @ {t['exit_price']:,.0f}\n"
+            f"   PnL: {pnl:+,.0f} IDR ({t.get('pnl_pct', 0):+.2f}%)"
+        )
     return "\n".join(lines)
 
 if __name__ == "__main__":
-    print(analyze_performance())
+    print(full_report())

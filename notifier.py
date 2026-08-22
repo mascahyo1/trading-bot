@@ -1,7 +1,7 @@
 import logging
 import os
 from datetime import datetime
-from config import LOG_FILE
+from config import LOG_FILE, TZ_JAKARTA
 
 
 def setup_logger():
@@ -11,8 +11,9 @@ def setup_logger():
 
     formatter = logging.Formatter(
         "%(asctime)s | %(levelname)-8s | %(name)-15s | %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
+        datefmt="%H:%M:%S %A, %d %B %Y",
     )
+    formatter.converter = lambda *args: datetime.now(TZ_JAKARTA).timetuple()
 
     file_handler = logging.FileHandler(LOG_FILE, encoding="utf-8")
     file_handler.setLevel(logging.INFO)

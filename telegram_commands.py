@@ -11,6 +11,7 @@ import urllib.request
 import urllib.error
 import threading
 from datetime import datetime
+from config import now_jakarta, format_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +104,7 @@ def get_status_text():
             "🤖 <b>BOT STATUS</b>",
             f"🟢 Status: Running",
             f"💰 IDR Balance: {bal:,.0f} IDR",
-            f"🕐 {datetime.now().strftime('%H:%M:%S')}",
+            f"🕐 {format_datetime()}",
         ]
         return "\n".join(lines)
     except Exception as e:

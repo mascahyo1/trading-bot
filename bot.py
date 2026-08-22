@@ -5,6 +5,7 @@ import os
 import sys
 import threading
 from datetime import datetime
+from config import now_jakarta, format_datetime
 
 from config import (
     TRADING_PAIRS, INTERVAL_SECONDS, CANDLESTICK_TIMEFRAME,
@@ -36,7 +37,7 @@ class ProductionBot:
         self.telegram = TelegramNotifier()
         self.running = False
         self.cycle_count = 0
-        self.start_time = datetime.now()
+        self.start_time = now_jakarta()
         self.daily_pnl = 0
         self.trades_today = 0
         self._stop_event = threading.Event()
@@ -152,7 +153,7 @@ class ProductionBot:
 
     def run_cycle(self):
         self.cycle_count += 1
-        now = datetime.now()
+        now = now_jakarta()
 
         if now.hour == 0 and now.minute < 20:
             self.daily_pnl = 0
@@ -173,7 +174,7 @@ class ProductionBot:
         self.logger.info("-" * 65)
         self.notifier.notify_summary(self.risk_manager)
         self.logger.info(f"Today: PnL={self.daily_pnl:+,.0f} IDR | Trades={self.trades_today}")
-        self.logger.info(f"Uptime: {now - self.start_time}")
+        self.logger.info(f"Uptime: {str(now - self.start_time).split('.')[0]}")
         self.logger.info("-" * 65)
 
     def _keyboard_listener(self):

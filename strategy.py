@@ -11,6 +11,8 @@ from config import (
     MIN_ORDER_IDR,
     TRADE_HISTORY_FILE,
     MAX_DAILY_LOSS_PCT,
+    now_jakarta,
+    format_datetime,
 )
 
 logger = logging.getLogger(__name__)
@@ -26,7 +28,7 @@ class Position:
         self.take_profit = entry_price * (1 + TAKE_PROFIT_PCT)
         self.highest_price = entry_price
         self.trailing_stop_pct = 0.05
-        self.entry_time = datetime.now().isoformat()
+        self.entry_time = now_jakarta().isoformat()
         self.status = "open"
 
     def update_trailing_stop(self, current_price):
@@ -79,7 +81,7 @@ class RiskManager:
             logger.error(f"Error saving trade history: {e}")
 
     def get_daily_pnl(self):
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = now_jakarta().strftime("%Y-%m-%d")
         pnl = 0
         for t in self.trade_history:
             exit_time = t.get("exit_time", "")
@@ -142,7 +144,7 @@ class RiskManager:
                 "pnl_pct": round(pnl_pct * 100, 4),
                 "pnl_amount": round(pnl_amount, 2),
                 "entry_time": pos.entry_time,
-                "exit_time": datetime.now().isoformat(),
+                "exit_time": now_jakarta().isoformat(),
             }
 
             self.trade_history.append(trade_record)

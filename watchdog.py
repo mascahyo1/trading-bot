@@ -10,6 +10,7 @@ import sys
 import logging
 import urllib.request
 from datetime import datetime
+from config import now_jakarta, format_datetime
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -135,10 +136,10 @@ def main():
     except Exception:
         pass
 
-    lines.append(f"🕐 {datetime.now().strftime('%H:%M UTC')}")
+    lines.append(f"🕐 {format_datetime()}")
 
     send_telegram("\n".join(lines))
-    print(f"HEARTBEAT - {datetime.now().strftime('%H:%M:%S')}")
+    print(f"HEARTBEAT - {format_datetime()}")
 
 if __name__ == "__main__":
     main()

@@ -1,8 +1,20 @@
 import os
 from dotenv import load_dotenv
+from datetime import datetime, timezone, timedelta
 
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 load_dotenv()
+
+TZ_JAKARTA = timezone(timedelta(hours=7))
+DATETIME_FORMAT = "%H:%M:%S %A, %d %B %Y"
+
+def now_jakarta():
+    return datetime.now(TZ_JAKARTA)
+
+def format_datetime(dt=None):
+    if dt is None:
+        dt = now_jakarta()
+    return dt.strftime(DATETIME_FORMAT)
 
 INDODAX_API_KEY = os.getenv("indodax_api_key", "")
 INDODAX_API_SECRET = os.getenv("indodax_api_secret", "")
