@@ -21,10 +21,24 @@ class Position:
         self.entry_price = entry_price
         self.amount = amount
         self.side = side
-        self.stop_loss = entry_price * (1 - STOP_LOSS_PCT) if side == "long" else entry_price * (1 + STOP_LOSS_PCT)
-        self.take_profit = entry_price * (1 + TAKE_PROFIT_PCT) if side == "long" else entry_price * (1 - TAKE_PROFIT_PCT)
+        self.stop_loss = entry_price * (1 - STOP_LOSS_PCT)
+        self.take_profit = entry_price * (1 + TAKE_PROFIT_PCT)
+        self.highest_price = entry_price
+        self.trailing_stop_pct = 0.05
         self.entry_time = datetime.now().isoformat()
         self.status = "open"
+
+    def update_trailing_stop(self, current_price):
+        if current_price > self.highest_price:
+            self.highest_price = current_price
+            new_stop = current_price * (1 - self.trailing_stop_pct)
+            if new_stop > self.stop_loss:
+                self.stop_loss = new_stop
+                return True
+        return False
+
+    def check_trailing_stop(self, current_price):
+        return current_price <= self.stop_loss
 
     def to_dict(self):
         return {
@@ -34,6 +48,7 @@ class Position:
             "side": self.side,
             "stop_loss": self.stop_loss,
             "take_profit": self.take_profit,
+            "highest_price": self.highest_price,
             "entry_time": self.entry_time,
             "status": self.status,
         }
@@ -157,27 +172,61 @@ class TradingStrategy:
         self.analyzer = analyzer
         self.risk_manager = risk_manager
         self.min_confidence = 0.65
+        self.rsi_overbought = 70
+        self.rsi_oversold = 30
 
     def evaluate(self, symbol, ohlcv, balance, current_price):
         analysis = self.analyzer.analyze(ohlcv, symbol=symbol)
         signal = analysis["signal"]
         confidence = analysis["confidence"]
+        indicators = analysis.get("indicators", {})
+        rsi = indicators.get("rsi", 50)
 
         logger.info(
             f"[{symbol}] Signal: {signal.upper()} | Confidence: {confidence:.1%} | "
-            f"Price: {current_price:.2f}"
+            f"RSI: {rsi} | Price: {current_price:.2f}"
         )
+
+        if symbol in self.risk_manager.positions and self.risk_manager.positions[symbol].status == "open":
+            pos = self.risk_manager.positions[symbol]
+
+            if pos.update_trailing_stop(current_price):
+                logger.info(
+                    f"[{symbol}] Trailing stop updated: {pos.stop_loss:.2f} "
+                    f"(highest: {pos.highest_price:.2f})"
+                )
+
+            if pos.check_trailing_stop(current_price):
+                return {
+                    "action": "close",
+                    "reason": f"trailing_stop (peak: {pos.highest_price:.0f})",
+                    "analysis": analysis,
+                }
+
+            if current_price >= pos.take_profit:
+                return {
+                    "action": "close",
+                    "reason": "take_profit",
+                    "analysis": analysis,
+                }
+
+            if rsi >= self.rsi_overbought and confidence > 0.5:
+                return {
+                    "action": "close",
+                    "reason": f"smart_sell (RSI: {rsi:.1f} overbought)",
+                    "analysis": analysis,
+                }
+
+            macd_hist = indicators.get("macd_histogram", 0)
+            if rsi > 65 and macd_hist < 0:
+                return {
+                    "action": "close",
+                    "reason": f"smart_sell (RSI: {rsi:.1f}, MACD bearish)",
+                    "analysis": analysis,
+                }
 
         if signal == "hold" or confidence < self.min_confidence:
             return {"action": "hold", "analysis": analysis}
-
-        sl_tp_check = self.risk_manager.check_stop_loss_take_profit(symbol, current_price)
-        if sl_tp_check:
-            return {
-                "action": "close",
-                "reason": sl_tp_check,
-                "analysis": analysis,
-            }
 
         if signal == "buy":
             if symbol in self.risk_manager.positions and self.risk_manager.positions[symbol].status == "open":
@@ -193,13 +242,5 @@ class TradingStrategy:
                 "amount": amount,
                 "analysis": analysis,
             }
-
-        if signal == "sell":
-            if symbol in self.risk_manager.positions and self.risk_manager.positions[symbol].status == "open":
-                return {
-                    "action": "close",
-                    "reason": "signal_reversal",
-                    "analysis": analysis,
-                }
 
         return {"action": "hold", "analysis": analysis}
