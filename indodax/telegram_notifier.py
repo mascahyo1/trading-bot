@@ -50,48 +50,45 @@ class TelegramNotifier:
             return False
 
     def notify_trade(self, symbol, side, price, amount=None, pnl=None):
-        emoji = "🟢" if side == "BUY" else "🔴"
         msg = (
-            f"🏦 <b>INDODAX</b>\n"
-            f"{emoji} <b>{side}</b> {symbol}\n"
-            f"💰 Price: {price:,.0f} IDR\n"
+            f"<b>INDODAX TRADE</b>\n"
+            f"<b>{side}</b> {symbol}\n"
+            f"Price: {price:,.0f} IDR\n"
         )
         if amount:
-            msg += f"📊 Amount: {amount:.8f}\n"
+            msg += f"Amount: {amount:.8f}\n"
         if pnl is not None:
-            emoji_pnl = "✅" if pnl >= 0 else "❌"
-            msg += f"{emoji_pnl} PnL: {pnl:+,.0f} IDR\n"
+            sign = "+" if pnl >= 0 else ""
+            msg += f"PnL: {sign}{pnl:,.0f} IDR\n"
         self.send(msg)
 
     def notify_signal(self, symbol, signal, confidence, indicators):
-        emoji = "📈" if signal == "buy" else "📉" if signal == "sell" else "➖"
         msg = (
-            f"{emoji} Signal: <b>{signal.upper()}</b> {symbol}\n"
-            f"🎯 Confidence: {confidence:.0%}\n"
-            f"📊 RSI: {indicators.get('rsi', 'N/A')} | "
+            f"Signal: <b>{signal.upper()}</b> {symbol}\n"
+            f"Confidence: {confidence:.0%}\n"
+            f"RSI: {indicators.get('rsi', 'N/A')} | "
             f"MACD: {indicators.get('macd_histogram', 'N/A')}\n"
         )
         self.send(msg)
 
     def notify_summary(self, balance, positions, total_pnl, win_rate, trades):
-        avg_win, avg_loss = 0, 0
+        sign = "+" if total_pnl >= 0 else ""
         msg = (
-            f"🏦 <b>INDODAX SUMMARY</b>\n"
-            f"💰 Balance: {balance:,.0f} IDR\n"
-            f"📂 Open: {positions} positions\n"
-            f"📈 PnL: {total_pnl:+,.0f} IDR\n"
-            f"🎯 Win: {win_rate}% ({trades} trades)\n"
+            f"<b>INDODAX SUMMARY</b>\n"
+            f"Balance: {balance:,.0f} IDR\n"
+            f"Open: {positions} positions\n"
+            f"PnL: {sign}{total_pnl:,.0f} IDR\n"
+            f"Win: {win_rate}% ({trades} trades)\n"
         )
-        if avg_win > 0 and avg_loss > 0:
-            msg += f"📊 Avg Win: {avg_win:,.0f} | Avg Loss: {avg_loss:,.0f}\n"
         self.send(msg)
 
     def notify_portfolio(self, balance, unrealized, total_portfolio, positions):
+        sign_u = "+" if unrealized >= 0 else ""
         msg = (
-            f"🏦 <b>PORTFOLIO</b>\n"
-            f"💰 Cash: {balance:,.0f} IDR\n"
-            f"📈 Unrealized: {unrealized:+,.0f} IDR\n"
-            f"💎 Total: {total_portfolio:,.0f} IDR\n"
+            f"<b>PORTFOLIO</b>\n"
+            f"Cash: {balance:,.0f} IDR\n"
+            f"Unrealized: {sign_u}{unrealized:,.0f} IDR\n"
+            f"Total: {total_portfolio:,.0f} IDR\n"
         )
         if positions:
             msg += f"\n<b>POSITIONS</b>\n"
@@ -101,20 +98,20 @@ class TelegramNotifier:
         self.send(msg)
 
     def notify_error(self, message):
-        msg = f"⚠️ <b>ERROR</b>\n{message}"
+        msg = f"<b>ERROR</b>\n{message}"
         self.send(msg)
 
     def notify_start(self, pairs, timeframe):
         msg = (
-            f"🏦 <b>INDODAX BOT STARTED</b>\n"
-            f"📊 Pairs: {', '.join(pairs)}\n"
-            f"⏱ Timeframe: {timeframe}\n"
-            f"🔔 Notifications: ON"
+            f"<b>INDODAX BOT STARTED</b>\n"
+            f"Pairs: {', '.join(pairs)}\n"
+            f"Timeframe: {timeframe}\n"
+            f"Notifications: ON"
         )
         self.send(msg)
 
     def notify_stop(self, reason="User request"):
-        msg = f"🏦 <b>INDODAX</b>\n🛑 <b>BOT STOPPED</b>\n📋 Reason: {reason}"
+        msg = f"<b>INDODAX</b>\n<b>BOT STOPPED</b>\nReason: {reason}"
         self.send(msg)
 
 
@@ -125,9 +122,9 @@ def test_telegram():
         return False
 
     msg = (
-        "✅ <b>Test Notification</b>\n"
+        "<b>Test Notification</b>\n"
         "Trading bot Telegram integration is working!\n"
-        f"🕐 Time: working"
+        f"Time: working"
     )
     result = tg.send(msg)
     if result:

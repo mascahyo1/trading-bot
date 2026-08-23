@@ -77,7 +77,7 @@ def get_portfolio_text():
             return "Error fetching portfolio"
 
         total_idr = 0
-        lines = ["📊 <b>PORTFOLIO</b>"]
+        lines = ["<b>PORTFOLIO</b>"]
         for b in bal.get("balances", []):
             free = float(b.get("free", 0))
             locked = float(b.get("locked", 0))
@@ -92,7 +92,7 @@ def get_portfolio_text():
                 total_idr += idr_val
                 if idr_val > 100:
                     lines.append(f"  {asset}: {total:.6f} = {idr_val:,.0f} IDR")
-        lines.append(f"\n💰 <b>Total: {total_idr:,.0f} IDR</b>")
+        lines.append(f"\n<b>Total: {total_idr:,.0f} IDR</b>")
         return "\n".join(lines)
     except Exception as e:
         return f"Error: {e}"
@@ -104,10 +104,10 @@ def get_status_text():
         ex = IndodaxExchange()
         bal = ex.get_idr_balance()
         lines = [
-            "🤖 <b>BOT STATUS</b>",
-            f"🟢 Status: Running",
-            f"💰 IDR Balance: {bal:,.0f} IDR",
-            f"🕐 {format_datetime()}",
+            "<b>BOT STATUS</b>",
+            f"Status: Running",
+            f"IDR Balance: {bal:,.0f} IDR",
+            f"{format_datetime()}",
         ]
         return "\n".join(lines)
     except Exception as e:
@@ -117,18 +117,18 @@ def get_trades_text():
     try:
         history_file = os.path.join(SCRIPT_DIR, "trade_history.json")
         if not os.path.exists(history_file):
-            return "📜 No trades yet"
+            return "No trades yet"
         with open(history_file) as f:
             trades = json.load(f)
         if not trades:
-            return "📜 No trades yet"
-        lines = ["📜 <b>RECENT TRADES</b>"]
+            return "No trades yet"
+        lines = ["<b>RECENT TRADES</b>"]
         for t in trades[-5:]:
             pnl = t.get("pnl_amount", 0)
-            emoji = "✅" if pnl >= 0 else "❌"
+            sign = "+" if pnl >= 0 else ""
             lines.append(
-                f"  {emoji} {t['symbol']} {t['side']} @ {t['exit_price']:,.0f}\n"
-                f"     PnL: {pnl:+,.0f} IDR ({t.get('pnl_pct', 0):+.2f}%)"
+                f"  {t['symbol']} {t['side']} @ {t['exit_price']:,.0f}\n"
+                f"     PnL: {sign}{pnl:,.0f} IDR ({t.get('pnl_pct', 0):+.2f}%)"
             )
         return "\n".join(lines)
     except Exception as e:
