@@ -63,9 +63,29 @@ def get_updates(offset=None):
         with urllib.request.urlopen(req, timeout=35) as resp:
             data = json.loads(resp.read().decode())
             return data.get("result", [])
+    except urllib.error.HTTPError as e:
+        if e.code == 409:
+            logger.warning("Telegram conflict (409) - clearing pending updates")
+            clear_pending_updates()
+            return []
+        logger.error(f"getUpdates HTTP {e.code}: {e.reason}")
+        return []
     except Exception as e:
         logger.error(f"getUpdates error: {e}")
         return []
+
+def clear_pending_updates():
+    if not TELEGRAM_TOKEN:
+        return
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates"
+    params = {"offset": -1, "timeout": 1}
+    query = "&".join(f"{k}={v}" for k, v in params.items())
+    req = urllib.request.Request(f"{url}?{query}")
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            resp.read()
+    except Exception:
+        pass
 
 def get_portfolio_text():
     try:
