@@ -101,10 +101,10 @@ class AjaibTrader:
 
     async def _init_browser(self):
         """
-        Launch Chromium headless baru.
+        Launch Chromium headless baru dengan stealth mode untuk hindari deteksi bot.
 
-        Browser dibuat fresh setiap operasi agar tidak ada state sisa
-        dari operasi sebelumnya (isolated execution).
+        Menggunakan playwright-stealth untuk memodifikasi fingerprint browser
+        agar terlihat seperti user biasa (bukan headless bot) oleh Cloudflare/CDN.
 
         Returns:
             Browser: Instance Chromium headless yang siap dipakai.
@@ -113,6 +113,22 @@ class AjaibTrader:
         self._playwright = await async_playwright().start()
         self._browser = await self._playwright.chromium.launch(headless=True)
         return self._browser
+
+    async def _apply_stealth(self, page):
+        """
+        Terapkan stealth mode pada halaman untuk hindari deteksi bot oleh Cloudflare.
+
+        Memodifikasi fingerprint browser (webdriver, plugins, languages, dll)
+        agar terlihat seperti user biasa.
+
+        Args:
+            page: Halaman Playwright yang akan di-stealth-kan.
+        """
+        try:
+            from playwright_stealth import stealth_async
+            await stealth_async(page)
+        except Exception as e:
+            logger.warning(f"Stealth apply failed: {e}")
 
     async def _close(self):
         """Tutup browser dan stop playwright instance (cleanup)."""
@@ -135,6 +151,7 @@ class AjaibTrader:
             bool: True jika masih login, False jika session expired.
         """
         page = await context.new_page()
+        await self._apply_stealth(page)
         await page.goto(f"{self.base_url}/home", wait_until="networkidle", timeout=60000)
         url = page.url
         await page.close()
@@ -166,6 +183,7 @@ class AjaibTrader:
                 return None
 
             page = await context.new_page()
+            await self._apply_stealth(page)
             await page.goto(f"{self.base_url}/home", wait_until="networkidle", timeout=30000)
 
             # Debug: log URL dan title untuk diagnose masalah scraping
@@ -302,6 +320,7 @@ class AjaibTrader:
                 return {"success": False, "error": "Session expired"}
 
             page = await context.new_page()
+            await self._apply_stealth(page)
             await page.goto(f"{self.base_url}/stock/{code}", wait_until="networkidle", timeout=30000)
 
             # Step 1: Klik tombol Beli — coba text-based dulu, lalu class-based
@@ -364,6 +383,7 @@ class AjaibTrader:
                 return {"success": False, "error": "Session expired"}
 
             page = await context.new_page()
+            await self._apply_stealth(page)
             await page.goto(f"{self.base_url}/stock/{code}", wait_until="networkidle", timeout=30000)
 
             sell_button = page.locator("button:has-text('Jual'), button:has-text('Sell'), [data-testid='sell-button']")
