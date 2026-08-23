@@ -22,6 +22,7 @@ import time
 import logging
 import urllib.request
 import urllib.error
+import urllib.parse
 import threading
 
 logger = logging.getLogger(__name__)
@@ -133,10 +134,11 @@ def get_updates(offset=None):
     if not TELEGRAM_TOKEN:
         return []
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates"
-    params = {"timeout": 30, "allowed_updates": ["message", "callback_query"]}
+    # allowed_updates harus di-encode sebagai JSON array, bukan string Python list
+    params = {"timeout": 30, "allowed_updates": json.dumps(["message", "callback_query"])}
     if offset:
         params["offset"] = offset
-    query = "&".join(f"{k}={v}" for k, v in params.items())
+    query = urllib.parse.urlencode(params)
     req = urllib.request.Request(f"{url}?{query}")
     try:
         with urllib.request.urlopen(req, timeout=35) as resp:
@@ -163,7 +165,7 @@ def clear_pending_updates():
         return
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates"
     params = {"offset": -1, "timeout": 1}
-    query = "&".join(f"{k}={v}" for k, v in params.items())
+    query = urllib.parse.urlencode(params)
     req = urllib.request.Request(f"{url}?{query}")
     try:
         with urllib.request.urlopen(req, timeout=5) as resp:

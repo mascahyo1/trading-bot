@@ -138,10 +138,11 @@ async function sendTelegram(text) {
 /**
  * Scrape portfolio (saldo kas + daftar saham) dari DOM halaman home Ajaib.
  *
- * Parsing dilakukan DI DALAM konteks browser via page.evaluate():
- *   1. CASH: Coba beberapa pola regex berurutan (Saldo/Cash/Dana/Rp).
- *      Angka valid jika > 1000 agar tidak salah ambil harga satuan.
- *      Format Indonesia: titik sebagai pemisah ribuan (1.500.000).
+ * Strategi parsing (dieksekusi DI DALAM konteks browser via page.evaluate()):
+ *   1. CASH: prioritaskan selector "Buying Power" (paling reliable).
+ *      span.text-body-regular.text-white yang mengandung teks "Buying Power",
+ *      lalu ambil nilai <span> di dalamnya (format "Rp 100.000").
+ *      Fallback ke regex Saldo/Cash/Dana/Rp jika selector tidak ditemukan.
  *   2. STOCKS: Baris dengan tepat 4 huruf kapital dianggap kode saham,
  *      lalu scan maksimal 10 baris berikutnya untuk mencari jumlah lot
  *      (pola "N lot") dan harga (> 100).
@@ -157,43 +158,52 @@ async function getPortfolio(page) {
         const result = await page.evaluate(() => {
             const data = { cash: 0, stocks: [], totalValue: 0 };
 
-            const allText = document.body.innerText;
-            const lines = allText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+            // PRIORITAS 1: Selector "Buying Power" - paling reliable
+            const bpElement = Array.from(
+                document.querySelectorAll('span.text-body-regular.text-white')
+            ).find(el => el.textContent.includes('Buying Power'));
+            if (bpElement) {
+                const nominalSpan = bpElement.querySelector('span');
+                if (nominalSpan) {
+                    const raw = nominalSpan.innerText.replace(/Rp\s*/i, '').replace(/\./g, '').replace(',', '.');
+                    data.cash = parseFloat(raw) || 0;
+                }
+            }
 
-            // Pola regex saldo kas - dicoba berurutan, pertama match & valid menang
-            const cashPatterns = [
-                /Saldo[^:]*:?\s*Rp?\s*([\d.,]+)/i,
-                /Cash[^:]*:?\s*Rp?\s*([\d.,]+)/i,
-                /Dana[^:]*:?\s*Rp?\s*([\d.,]+)/i,
-                /Rp\s*([\d.,]{4,})/,
-            ];
-            for (const pattern of cashPatterns) {
-                const match = allText.match(pattern);
-                if (match) {
-                    // Konversi format Indonesia: hapus titik ribuan, koma jadi desimal
-                    const raw = match[1].replace(/\./g, '').replace(',', '.');
-                    const val = parseFloat(raw);
-                    if (val > 1000) {
-                        data.cash = val;
-                        break;
+            // FALLBACK: regex lama jika selector tidak ditemukan
+            if (data.cash === 0) {
+                const allText = document.body.innerText;
+                const cashPatterns = [
+                    /Saldo[^:]*:?\s*Rp?\s*([\d.,]+)/i,
+                    /Cash[^:]*:?\s*Rp?\s*([\d.,]+)/i,
+                    /Dana[^:]*:?\s*Rp?\s*([\d.,]+)/i,
+                    /Rp\s*([\d.,]{4,})/,
+                ];
+                for (const pattern of cashPatterns) {
+                    const match = allText.match(pattern);
+                    if (match) {
+                        const raw = match[1].replace(/\./g, '').replace(',', '.');
+                        const val = parseFloat(raw);
+                        if (val > 1000) {
+                            data.cash = val;
+                            break;
+                        }
                     }
                 }
             }
 
-            // Scan baris demi baris mencari kode saham (4 huruf kapital)
+            // Scan saham
+            const lines = allText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
             for (let i = 0; i < lines.length; i++) {
                 const line = lines[i];
                 if (/^[A-Z]{4}$/.test(line)) {
                     const stockCode = line;
                     let lots = 0;
                     let price = 0;
-                    // Cari lot & harga pada maksimal 10 baris setelah kode saham
                     for (let j = i + 1; j < Math.min(i + 10, lines.length); j++) {
                         const nextLine = lines[j];
                         const lotMatch = nextLine.match(/(\d+)\s*lot/i);
-                        if (lotMatch) {
-                            lots = parseInt(lotMatch[1]);
-                        }
+                        if (lotMatch) lots = parseInt(lotMatch[1]);
                         const priceMatch = nextLine.match(/(\d{3,}(?:[.,]\d+)?)/);
                         if (priceMatch) {
                             const p = parseFloat(priceMatch[1].replace(/\./g, '').replace(',', '.'));
