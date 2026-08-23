@@ -1,3 +1,29 @@
+"""
+Trading Strategy & Risk Management untuk Saham Indonesia
+
+Mengimplementasikan:
+- Position tracking dengan stop-loss, take-profit, trailing stop
+- Fee-aware pricing (entry price include buy fees, PnL net of sell fees)
+- Dollar Cost Averaging (DCA) untuk averaging down
+- Partial selling untuk profit taking bertahap
+- Risk management dengan position sizing dan daily loss limit
+
+Biaya Transaksi (Otomatis Dihitung):
+- Buy: 0.14% (broker + clearing + BEI)
+- Sell: 0.34% (broker + clearing + BEI + PPN + PPh)
+- Round-trip: 0.48%
+
+Fitur:
+- Entry price sudah include buy fees (true cost basis)
+- PnL dihitung net setelah sell fees
+- Break-even price dihitung untuk mengetahui titik impas
+- Stop-loss pada -3% dari cost basis
+- Take-profit pada +8% dari cost basis
+- Trailing stop 5% dari harga tertinggi
+
+Author: AI Trading Bot
+"""
+
 import json
 import os
 import logging
@@ -24,7 +50,32 @@ logger = logging.getLogger(__name__)
 
 
 class Position:
+    """
+    Merepresentasikan posisi saham yang terbuka.
+    
+    Attributes:
+        symbol (str): Kode saham (mis. "BBCA.JK")
+        code (str): Kode singkat (mis. "BBCA")
+        entry_price_market (float): Harga beli di pasar
+        entry_price (float): Cost basis (include buy fees)
+        lots (int): Jumlah lot (1 lot = 100 lembar)
+        shares (int): Jumlah lembar (lots * 100)
+        stop_loss (float): Harga stop loss
+        take_profit (float): Harga take profit
+        break_even_price (float): Harga impas (include sell fees)
+        status (str): "open" atau "closed"
+    """
+
     def __init__(self, symbol, entry_price, lots, code=None):
+        """
+        Inisialisasi posisi saham baru.
+        
+        Args:
+            symbol (str): Kode saham (mis. "BBCA.JK")
+            entry_price (float): Harga beli di pasar
+            lots (int): Jumlah lot
+            code (str): Kode singkat saham
+        """
         self.symbol = symbol
         self.code = code or symbol.replace(".JK", "")
         self.entry_price_market = entry_price

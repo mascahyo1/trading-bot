@@ -1,3 +1,21 @@
+"""
+Stock Exchange Wrapper untuk Saham Indonesia (yfinance)
+
+Menyediakan data harga saham Indonesia dengan kode .JK (Jakarta Stock Exchange).
+Menggunakan yfinance sebagai sumber data dengan caching untuk mengurangi API calls.
+
+Format kode saham: BBCA.JK, BMRI.JK, TLKM.JK, dll
+
+Fitur:
+- OHLCV data untuk analisis teknikal
+- Real-time price quotes
+- Intraday data (5-minute intervals)
+- Caching dengan TTL 60 detik
+- Multiple stock prices fetching
+
+Author: AI Trading Bot
+"""
+
 import logging
 import time
 import pandas as pd
@@ -8,11 +26,31 @@ logger = logging.getLogger(__name__)
 
 
 class StockExchange:
+    """
+    Wrapper class untuk yfinance (saham Indonesia).
+    
+    Attributes:
+        _cache (dict): Cache untuk menyimpan data OHLCV
+        _cache_ttl (int): Cache time-to-live dalam detik
+    """
+
     def __init__(self):
+        """Initialize exchange dengan cache kosong."""
         self._cache = {}
         self._cache_ttl = 60
 
     def fetch_ohlcv(self, symbol, period=None, interval="1d"):
+        """
+        Fetch OHLCV data untuk satu saham.
+        
+        Args:
+            symbol (str): Kode saham (mis. "BBCA.JK")
+            period (str): Periode data (mis. "90d", "1y")
+            interval (str): Interval candle ("1d", "1h", "5m")
+            
+        Returns:
+            list: List of [timestamp, open, high, low, close, volume] atau None
+        """
         if period is None:
             period = f"{LOOKBACK_DAYS}d"
 

@@ -512,9 +512,30 @@ COMMAND_MAP = {
     "/why-saham": get_saham_why_idle,
     "/fees-saham": get_saham_fees,
 }
+"""
+Command-to-handler mapping untuk Telegram.
+
+Setiap command map ke exactly satu handler function.
+Tidak ada alias yang overlap antara bot → tidak ada response dobel.
+
+Handler function mengembalikan string HTML yang dikirim ke Telegram.
+"""
 
 
 def handle_command(text, chat_id):
+    """
+    Route Telegram command ke handler yang sesuai.
+    
+    Args:
+        text (str): Message text dari Telegram
+        chat_id (str): Chat ID untuk konfirmasi aksi sensitif (stop/start)
+        
+    Flow:
+        1. Parse command dari text
+        2. Cari handler di COMMAND_MAP
+        3. Execute handler dan kirim response
+        4. Khusus stop/start: memerlukan konfirmasi 2x
+    """
     text = text.strip()
     cmd = text.lower().split()[0] if text else ""
 

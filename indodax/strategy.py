@@ -1,3 +1,23 @@
+"""
+Trading Strategy & Risk Management untuk Indodax (Crypto)
+
+Mengimplementasikan:
+- Position tracking dengan stop-loss, take-profit, trailing stop
+- Dollar Cost Averaging (DCA) untuk averaging down
+- Partial selling untuk profit taking bertahap
+- Risk management dengan position sizing dan daily loss limit
+- Win rate tracking dan trade history
+
+Fitur:
+- Auto stop-loss pada -3%
+- Auto take-profit pada +6%
+- Trailing stop 5% dari harga tertinggi
+- DCA otomatis saat harga turun 3% dan 6%
+- Partial sell 50% saat TP1 (+3%), sisanya saat TP2 (+6%)
+
+Author: AI Trading Bot
+"""
+
 import json
 import os
 import logging
@@ -22,7 +42,32 @@ logger = logging.getLogger(__name__)
 
 
 class Position:
+    """
+    Merepresentasikan posisi trading yang terbuka.
+    
+    Attributes:
+        symbol (str): Pair trading (mis. "BTC/IDR")
+        entry_price (float): Harga beli rata-rata
+        initial_amount (float): Jumlah awal dibeli
+        amount (float): Jumlah saat ini (berubah jika partial sell/DCA)
+        stop_loss (float): Harga stop loss
+        take_profit (float): Harga take profit
+        highest_price (float): Highest price untuk trailing stop
+        status (str): "open" atau "closed"
+        partial_sell_count (int): Jumlah partial sell yang sudah dilakukan
+        dca_count (int): Jumlah DCA yang sudah dilakukan
+    """
+
     def __init__(self, symbol, entry_price, amount, side="long"):
+        """
+        Inisialisasi posisi baru.
+        
+        Args:
+            symbol (str): Pair trading
+            entry_price (float): Harga entry
+            amount (float): Jumlah asset
+            side (str): "long" atau "short"
+        """
         self.symbol = symbol
         self.entry_price = entry_price
         self.initial_amount = amount

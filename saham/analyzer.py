@@ -1,3 +1,20 @@
+"""
+Market Analyzer untuk Saham Indonesia
+
+Analisis teknikal multi-indikator untuk menghasilkan sinyal trading
+(buy/sell/hold) dengan confidence score.
+
+Indikator:
+- RSI (14): Overbought/oversold detection
+- MACD (12/26/9): Momentum trend
+- EMA (9/21/50): Arah trend
+- Bollinger Bands (20/2): Volatilitas & price extremes
+- ATR (14): Volatility measurement
+- Volume: Signal confirmation
+
+Author: AI Trading Bot
+"""
+
 import numpy as np
 import pandas as pd
 import logging
@@ -6,7 +23,20 @@ logger = logging.getLogger(__name__)
 
 
 class MarketAnalyzer:
+    """
+    Technical analysis engine untuk saham Indonesia.
+    
+    Menghasilkan sinyal buy/sell/hold berdasarkan kombinasi
+    multiple technical indicators dengan weighted scoring.
+    """
+
     def __init__(self, use_llm=False):
+        """
+        Initialize MarketAnalyzer.
+        
+        Args:
+            use_llm (bool): Aktifkan LLM analysis (default False untuk saham)
+        """
         self.signal_weights = {
             "rsi": 0.20,
             "macd": 0.20,

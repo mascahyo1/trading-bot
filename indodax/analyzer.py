@@ -1,3 +1,24 @@
+"""
+AI Market Analyzer untuk Indodax (Crypto)
+
+Menggabungkan analisis teknikal multi-indikator dengan AI (LLM) untuk menghasilkan
+sinyal trading (buy/sell/hold) dengan confidence score.
+
+Indikator yang digunakan:
+- RSI (14): Deteksi overbought/oversold
+- MACD (12/26/9): Momentum trend
+- EMA (9/21/50): Arah trend
+- Bollinger Bands (20/2): Volatilitas & ekstrem harga
+- ATR (14): Ukuran volatilitas
+- Volume: Konfirmasi sinyal
+
+Hybrid Scoring:
+- Technical Analysis: 60% weight
+- LLM Analysis: 40% weight
+
+Author: AI Trading Bot
+"""
+
 import numpy as np
 import pandas as pd
 import logging
@@ -8,7 +29,22 @@ logger = logging.getLogger(__name__)
 
 
 class MarketAnalyzer:
+    """
+    Market analyzer yang menggabungkan analisis teknikal dan AI.
+    
+    Attributes:
+        signal_weights (dict): Bobot setiap indikator dalam menghitung sinyal
+        llm (LLMClient): Client untuk analisis AI (LongCat-2.0)
+        use_llm (bool): Apakah LLM analysis aktif
+    """
+
     def __init__(self, use_llm=True):
+        """
+        Initialize MarketAnalyzer.
+        
+        Args:
+            use_llm (bool): Aktifkan analisis LLM. Default True.
+        """
         self.signal_weights = {
             "rsi": 0.20,
             "macd": 0.20,
@@ -25,6 +61,15 @@ class MarketAnalyzer:
             logger.info("LLM analysis DISABLED (using technical only)")
 
     def prepare_dataframe(self, ohlcv):
+        """
+        Convert OHLCV data ke pandas DataFrame.
+        
+        Args:
+            ohlcv (list): List of [timestamp, open, high, low, close, volume]
+            
+        Returns:
+            pd.DataFrame: DataFrame dengan kolom timestamp, open, high, low, close, volume
+        """
         df = pd.DataFrame(
             ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"]
         )

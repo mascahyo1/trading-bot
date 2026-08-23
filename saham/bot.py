@@ -1,3 +1,26 @@
+"""
+Saham Trading Bot untuk Pasar Saham Indonesia
+
+Bot ini menganalisis saham Indonesia (kode .JK) setiap 5 menit,
+menghasilkan sinyal trading berdasarkan analisis teknikal,
+dan mengeksekusi transaksi via browser automation di Ajaib.
+
+Arsitektur:
+- yfinance untuk data harga
+- Playwright untuk eksekusi transaksi di Ajaib
+- State file (saham_state.json) untuk komunikasi dengan Telegram handler
+- Tidak polling Telegram (di-handle oleh telegram_handler.py terpisah)
+
+Fitur:
+- Monitor 20 saham blue-chip
+- Analisis teknikal (RSI, MACD, EMA, Bollinger, ATR, Volume)
+- Fee-aware trading (biaya beli/jual otomatis dihitung)
+- Portfolio report tiap 5 menit ke Telegram
+- Net PnL (setelah potong biaya)
+
+Author: AI Trading Bot
+"""
+
 import time
 import logging
 import signal
@@ -32,6 +55,20 @@ SAHAM_STATE_FILE = os.path.join(SCRIPT_DIR, "saham_state.json")
 
 
 class SahamBot:
+    """
+    Main bot class untuk trading saham Indonesia.
+    
+    Bot ini tidak polling Telegram. Sebagian, ia menulis state ke file
+    (saham_state.json) yang dibaca oleh telegram_handler.py untuk
+    merespon command Telegram.
+    
+    Attributes:
+        exchange (StockExchange): yfinance wrapper
+        analyzer (MarketAnalyzer): Technical analysis engine
+        risk_manager (RiskManager): Risk management
+        strategy (TradingStrategy): Trading strategy
+        trader (AjaibTrader): Browser automation untuk Ajaib
+    """
     def __init__(self):
         self.logger = logging.getLogger("saham_bot")
         self.exchange = StockExchange()

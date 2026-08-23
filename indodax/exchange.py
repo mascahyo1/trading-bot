@@ -1,3 +1,26 @@
+"""
+Exchange Wrapper untuk Indodax (Crypto)
+
+Menyediakan interface untuk berinteraksi dengan API Indodax:
+- Public API: Server time, ticker, OHLCV
+- Private API: Balance, create order, cancel order, trade history
+
+Fitur:
+- Automatic retry (3x) untuk network errors
+- HMAC signature untuk autentikasi
+- CCXT integration untuk market data
+- Rate limiting support
+
+API Endpoints:
+- GET /api/v2/serverTime
+- GET /api/v2/tickers
+- GET /api/v2/trades
+- POST /api/v2/order
+- DELETE /api/v2/order
+
+Author: AI Trading Bot
+"""
+
 import hashlib
 import hmac
 import time
@@ -17,6 +40,12 @@ MAX_RETRIES = 3
 
 
 def api_retry(func):
+    """
+    Decorator untuk automatic retry pada API calls.
+    
+    Retry strategy: Exponential backoff (2s, 4s, 8s)
+    Max retries: 3 times
+    """
     def wrapper(*args, **kwargs):
         for attempt in range(MAX_RETRIES):
             try:
@@ -37,7 +66,17 @@ def api_retry(func):
 
 
 class IndodaxExchange:
+    """
+    Wrapper class untuk Indodax API.
+    
+    Attributes:
+        api_key (str): API key dari Indodax
+        secret_key (str): Secret key dari Indodax
+        ccxt (ccxt.exchange): CCXT instance untuk market data
+    """
+
     def __init__(self):
+        """Initialize exchange dengan API credentials."""
         self.api_key = INDODAX_API_KEY
         self.secret_key = INDODAX_API_SECRET
         self.ccxt = ccxt.indodax({
