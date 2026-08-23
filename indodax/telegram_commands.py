@@ -282,23 +282,23 @@ def handle_command(text, chat_id):
     prefix = "<b>INDODAX</b>\n"
 
     if cmd == "/status-indodax":
-        send_telegram(escape_html(prefix) + get_status_text())
+        send_telegram(prefix + get_status_text())
     elif cmd == "/why-idle" or cmd == "/why":
-        send_telegram(escape_html(prefix) + get_why_idle_text())
+        send_telegram(prefix + get_why_idle_text())
     elif cmd == "/portfolio-indodax":
-        send_telegram(escape_html(prefix) + get_portfolio_text())
+        send_telegram(prefix + get_portfolio_text())
     elif cmd == "/trades-indodax":
-        send_telegram(escape_html(prefix) + get_trades_text())
+        send_telegram(prefix + get_trades_text())
     elif cmd == "/analytics-indodax" or cmd == "/stats-indodax":
-        send_telegram(escape_html(prefix) + get_analytics_text())
+        send_telegram(prefix + get_analytics_text())
     elif cmd == "/analyze-improvement":
-        send_telegram(escape_html(prefix) + "Analyzing bot performance...")
+        send_telegram(prefix + "Analyzing bot performance...")
         try:
             sys.path.insert(0, SCRIPT_DIR)
             from monitor import run_analysis
             run_analysis()
         except Exception as e:
-            send_telegram(escape_html(prefix) + "Analysis failed: " + escape_html(str(e)[:200]))
+            send_telegram(prefix + "Analysis failed: " + escape_html(str(e)[:200]))
     elif cmd == "/stop-indodax":
         if chat_id in PENDING_CONFIRMATION and PENDING_CONFIRMATION[chat_id] == "stop":
             send_telegram(prefix + "Bot stopping...")
