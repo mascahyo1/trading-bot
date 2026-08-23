@@ -201,6 +201,15 @@ def handle_command(text, chat_id):
     elif cmd == "/analytics-indodax" or cmd == "/stats-indodax":
         send_telegram("🏦 <b>INDODAX</b>\n" + get_analytics_text())
 
+    elif cmd == "/analyze-improvement":
+        send_telegram("🏦 <b>INDODAX</b>\n🔍 Analyzing bot performance...")
+        try:
+            sys.path.insert(0, SCRIPT_DIR)
+            from monitor import run_analysis
+            run_analysis()
+        except Exception as e:
+            send_telegram(f"🏦 <b>INDODAX</b>\n❌ Analysis failed: {str(e)[:200]}")
+
     elif cmd == "/stop-indodax":
         if chat_id in PENDING_CONFIRMATION and PENDING_CONFIRMATION[chat_id] == "stop":
             send_telegram("🏦 <b>INDODAX</b>\n🛑 Bot stopping...")
@@ -240,6 +249,7 @@ def handle_command(text, chat_id):
             "/portfolio-indodax - All assets & total value\n"
             "/trades-indodax - Recent trade history\n"
             "/analytics-indodax - Win rate, PnL, best/worst trade\n"
+            "/analyze-improvement - AI analysis & improvement suggestions\n"
             "/stop-indodax - Stop bot (with confirmation)\n"
             "/start-indodax - Start bot (with confirmation)\n"
             "/help - Show this message"
