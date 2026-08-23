@@ -185,7 +185,7 @@ async function main() {
             lines.push('');
             lines.push(`<b>🏦 GRAND TOTAL: ${grandTotal.toLocaleString('id-ID')} IDR</b>`);
 
-            await sendTelegram('\n'.join(lines));
+            await sendTelegram(lines.join('\n'));
         }
     } catch (e) {
         log(`Error: ${e.message}`);
