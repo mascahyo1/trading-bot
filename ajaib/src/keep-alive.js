@@ -260,6 +260,7 @@ async function main() {
 
     // Retry logic: Cloudflare kadang block, coba sampai 3x dengan delay
     let success = false;
+    let lastError = null;
     for (let attempt = 1; attempt <= 3; attempt++) {
         if (attempt > 1) {
             log(`Retry attempt ${attempt}/3 after 30s...`);
