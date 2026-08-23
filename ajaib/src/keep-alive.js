@@ -7,6 +7,10 @@ const SESSION_DIR = path.join(__dirname, '..', 'session');
 const SESSION_FILE = path.join(SESSION_DIR, 'storage-state.json');
 const LOG_DIR = path.join(__dirname, '..', 'logs');
 const KEEP_ALIVE_INTERVAL = 3;
+const ALIVE_INTERVAL = 5;
+
+const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
+const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || '';
 
 async function ensureDirs() {
     for (const dir of [SESSION_DIR, LOG_DIR]) {
@@ -23,6 +27,24 @@ function log(message) {
     const date = new Date().toISOString().substring(0, 10);
     const logFile = path.join(LOG_DIR, `${date}.log`);
     fs.appendFileSync(logFile, line + '\n');
+}
+
+async function sendTelegram(text) {
+    if (!TELEGRAM_TOKEN || !TELEGRAM_CHAT_ID) return;
+    const url = `https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`;
+    const payload = { chat_id: TELEGRAM_CHAT_ID, text, parse_mode: 'HTML' };
+    try {
+        const https = require('https');
+        const data = JSON.stringify(payload);
+        const req = https.request(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+        }, (res) => res.on('data', () => {}));
+        req.write(data);
+        req.end();
+    } catch (e) {
+        log(`Telegram send error: ${e.message}`);
+    }
 }
 
 async function keepAlive() {
@@ -44,15 +66,22 @@ async function keepAlive() {
         const url = page.url();
         if (url.includes('login')) {
             log('SESSION EXPIRED - need to re-login');
+            await sendTelegram('<b>AJAIB BOT</b>\nSession expired! Run: npm run login');
         } else {
             log('Session keep-alive OK');
             await context.storageState({ path: SESSION_FILE });
         }
     } catch (e) {
         log(`Keep-alive error: ${e.message}`);
+        await sendTelegram(`<b>AJAIB BOT</b>\nKeep-alive error: ${e.message.substring(0, 200)}`);
     } finally {
         await browser.close();
     }
+}
+
+async function sendAliveNotification() {
+    const now = new Date().toISOString().replace('T', ' ').substring(0, 19);
+    await sendTelegram(`<b>AJAIB BOT ALIVE</b>\nSession OK\n${now}`);
 }
 
 async function startKeepAlive() {
@@ -63,6 +92,10 @@ async function startKeepAlive() {
 
     cron.schedule(`*/${KEEP_ALIVE_INTERVAL} * * * *`, async () => {
         await keepAlive();
+    });
+
+    cron.schedule(`*/${ALIVE_INTERVAL} * * * *`, async () => {
+        await sendAliveNotification();
     });
 }
 
