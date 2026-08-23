@@ -168,6 +168,9 @@ class AjaibTrader:
             page = await context.new_page()
             await page.goto(f"{self.base_url}/home", wait_until="networkidle", timeout=30000)
 
+            # Debug: log URL dan title untuk diagnose masalah scraping
+            logger.info(f"Ajaib page: url={page.url}, title={await page.title()}")
+
             # JavaScript dieksekusi DI DALAM browser (context halaman).
             # Perhatikan escaping \\s, \\d dsb karena string Python -> JS regex.
             portfolio = await page.evaluate("""() => {
@@ -244,8 +247,11 @@ class AjaibTrader:
                     }
                 }
 
-                return result;
+                 return result;
             }""")
+
+            # Debug: log hasil scraping untuk diagnose
+            logger.info(f"Ajaib scrape result: cash={portfolio.get('cash', 0)}, stocks={len(portfolio.get('stocks', []))} items")
 
             # Simpan session state terbaru supaya cookies selalu fresh
             await context.storage_state(path=self.session_file)

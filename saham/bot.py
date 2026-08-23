@@ -505,6 +505,10 @@ class SahamBot:
 
         if not self.is_market_open():
             self.logger.info("Market is CLOSED. Skipping analysis.")
+            # TETAP update portfolio & saldo saat market tutup agar user bisa cek
+            self.update_cash_balance()
+            self.send_portfolio_report()
+            self.write_state_to_file()
             return
 
         self.update_cash_balance()
