@@ -10,7 +10,7 @@
     "dev": "node --watch src/index.js"
   },
   "dependencies": {
-    "2captcha": "^3.0.5-2",
+    "@2captcha/captcha-solver": "^1.0.0",
     "dotenv": "^16.3.1",
     "node-cron": "^3.0.3",
     "playwright": "^1.62.1",

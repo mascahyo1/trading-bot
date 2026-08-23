@@ -1,15 +1,13 @@
 /**
  * 2Captcha Solver untuk bypass Cloudflare challenge di Ajaib.
  *
- * Dua tipe challenge Cloudflare:
- * 1. Turnstile (checkbox) - ada sitekey, bisa di-solve via API
- * 2. JS Challenge (browser integrity) - butuh solve dengan browser farm
+ * Menggunakan package @2captcha/captcha-solver (Node.js).
+ * Method yang tersedia:
+ * - solver.cloudflareTurnstile({pageurl, sitekey}) - untuk Cloudflare Turnstile (checkbox)
  *
- * Flow:
- * 1. Detect Cloudflare challenge di page
- * 2. Extract sitekey (jika Turnstile) atau gunakan Task API
- * 3. Kirim ke 2Captcha untuk solve
- * 4. Inject token kembali ke page
+ * Catatan: Cloudflare JS Challenge (browser integrity check / "Attention Required")
+ * TIDAK bisa di-solve dengan method standar - hanya Turnstile checkbox.
+ * Untuk JS Challenge, perlu 2Captcha Browser API (service terpisah).
  *
  * @module captcha-solver
  */
@@ -18,9 +16,13 @@ const TWO_CAPTCHA_API_KEY = process.env.TWO_CAPTCHA_API_KEY || process.env.CAPTC
 
 let Solver = null;
 try {
-    Solver = require('2captcha');
+    Solver = require('@2captcha/captcha-solver');
 } catch (e) {
-    console.warn('2captcha package not installed');
+    try {
+        Solver = require('2captcha');
+    } catch (e2) {
+        console.warn('2captcha package not installed. Run: npm install @2captcha/captcha-solver');
+    }
 }
 
 let solver = null;
@@ -85,6 +87,14 @@ async function getTurnstileSitekey(page) {
 /**
  * Solve Cloudflare challenge menggunakan 2Captcha.
  *
+ * Untuk Cloudflare Turnstile (checkbox challenge):
+ * 1. Extract sitekey dari page
+ * 2. Kirim ke 2Captcha sebagai turnstile task
+ * 3. Inject token kembali ke page
+ *
+ * NOTE: Cloudflare JS Challenge ("Attention Required") tidak bisa di-solve
+ * dengan method standar. Perlu 2Captcha Browser API (service terpisah).
+ *
  * @param {import('playwright').Page} page - Halaman challenge
  * @param {string} pageUrl - URL halaman yang di-challenge
  * @returns {Promise<boolean>} True jika berhasil solve
@@ -96,14 +106,14 @@ async function solveCloudflare(page, pageUrl) {
     }
 
     try {
-        // Coba extract Turnstile sitekey
+        // Extract Turnstile sitekey
         const sitekey = await getTurnstileSitekey(page);
 
         if (sitekey) {
-            console.log(`[Captcha] Solving Turnstile with sitekey: ${sitekey.substring(0, 20)}...`);
-            const result = await solver.turnstile({
+            console.log(`[Captcha] Solving Turnstile, sitekey: ${sitekey.substring(0, 20)}...`);
+            const result = await solver.cloudflareTurnstile({
+                pageurl: pageUrl,
                 sitekey: sitekey,
-                url: pageUrl,
             });
             const token = result.data;
             console.log(`[Captcha] Turnstile solved, token: ${token.substring(0, 30)}...`);
@@ -114,7 +124,7 @@ async function solveCloudflare(page, pageUrl) {
                 const input = document.querySelector('[name="cf-turnstile-response"]');
                 if (input) input.value = tkn;
 
-                // Atau trigger callback jika ada
+                // Trigger callback jika ada
                 if (typeof window.turnstileCallback === 'function') {
                     window.turnstileCallback(tkn);
                 }
@@ -129,14 +139,9 @@ async function solveCloudflare(page, pageUrl) {
             return true;
         }
 
-        // Fallback: gunakan Task API untuk JS challenge
-        console.log('[Captcha] No Turnstile sitekey found, trying Task API...');
-        const result = await solver.task({
-            type: 'ChallengeTaskProxyless',
-            websiteURL: pageUrl,
-        });
-        console.log(`[Captcha] Task solved: ${result.data ? 'OK' : 'FAIL'}`);
-        return !!result.data;
+        // Tidak ada Turnstile - kemungkinan JS Challenge
+        console.log('[Captcha] No Turnstile sitekey - JS Challenge detected, cannot solve with standard API');
+        return false;
 
     } catch (e) {
         console.error(`[Captcha] Solve failed: ${e.message}`);
