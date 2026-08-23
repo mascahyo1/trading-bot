@@ -193,7 +193,7 @@ class AjaibTrader:
         try:
             context = await browser.new_context(
                 storage_state=self.session_file,
-                userAgent=USER_AGENT,
+                user_agent=USER_AGENT,
                 viewport={'width': 1920, 'height': 1080},
             )
             if not await self._ensure_logged_in(context):
@@ -342,7 +342,7 @@ class AjaibTrader:
         try:
             context = await browser.new_context(
                 storage_state=self.session_file,
-                userAgent=USER_AGENT,
+                user_agent=USER_AGENT,
                 viewport={'width': 1920, 'height': 1080},
             )
             if not await self._ensure_logged_in(context):
@@ -409,7 +409,7 @@ class AjaibTrader:
         try:
             context = await browser.new_context(
                 storage_state=self.session_file,
-                userAgent=USER_AGENT,
+                user_agent=USER_AGENT,
                 viewport={'width': 1920, 'height': 1080},
             )
             if not await self._ensure_logged_in(context):
