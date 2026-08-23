@@ -125,8 +125,9 @@ class AjaibTrader:
             page: Halaman Playwright yang akan di-stealth-kan.
         """
         try:
-            from playwright_stealth import stealth_async
-            await stealth_async(page)
+            from playwright_stealth import Stealth
+            stealth = Stealth()
+            await stealth.apply_stealth_async(page)
         except Exception as e:
             logger.warning(f"Stealth apply failed: {e}")
 
