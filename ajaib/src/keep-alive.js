@@ -81,7 +81,9 @@ async function keepAlive() {
 
 async function sendAliveNotification() {
     const now = new Date().toISOString().replace('T', ' ').substring(0, 19);
-    await sendTelegram(`<b>AJAIB BOT ALIVE</b>\nSession OK\n${now}`);
+    const msg = `<b>AJAIB BOT ALIVE</b>\nSession OK\n${now}`;
+    log('Sending alive notification');
+    await sendTelegram(msg);
 }
 
 async function startKeepAlive() {
