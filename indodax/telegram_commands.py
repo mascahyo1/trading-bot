@@ -134,6 +134,82 @@ def get_trades_text():
     except Exception as e:
         return f"Error: {e}"
 
+def get_why_idle_text():
+    try:
+        history_file = os.path.join(SCRIPT_DIR, "trade_history.json")
+        trades = []
+        if os.path.exists(history_file):
+            with open(history_file) as f:
+                trades = json.load(f)
+        
+        sys.path.insert(0, SCRIPT_DIR)
+        from config import MAX_OPEN_POSITIONS, MIN_ORDER_IDR, now_jakarta
+        
+        reasons = []
+        
+        total_trades = len(trades)
+        wins = [t for t in trades if t.get("pnl_amount", 0) > 0]
+        win_rate = len(wins) / total_trades * 100 if total_trades > 0 else 0
+        
+        if total_trades >= 5 and win_rate < 40:
+            reasons.append(f"❌ Win rate {win_rate:.0f}% < 40% (blocking new buys)")
+        elif win_rate >= 40:
+            reasons.append(f"✅ Win rate {win_rate:.0f}% (good)")
+        else:
+            reasons.append(f"⚠️ Win rate {win_rate:.0f}% (need 5+ trades)")
+        
+        open_count = 0
+        try:
+            from exchange import IndodaxExchange
+            ex = IndodaxExchange()
+            balance = ex.get_idr_balance()
+            bal = ex.get_balance()
+            if bal and not bal.get("error"):
+                for b in bal.get("balances", []):
+                    asset = b.get("asset", "")
+                    free = float(b.get("free", 0))
+                    if free > 0 and asset != "IDR":
+                        open_count += 1
+        except Exception:
+            balance = 0
+        
+        if open_count >= MAX_OPEN_POSITIONS:
+            reasons.append(f"❌ Max positions ({open_count}/{MAX_OPEN_POSITIONS})")
+        else:
+            reasons.append(f"✅ Positions available ({open_count}/{MAX_OPEN_POSITIONS})")
+        
+        min_order = MIN_ORDER_IDR * 1.5
+        if balance < min_order:
+            reasons.append(f"❌ Balance {balance:,.0f} < {min_order:,.0f} IDR")
+        else:
+            reasons.append(f"✅ Balance {balance:,.0f} IDR (sufficient)")
+        
+        today = now_jakarta().strftime("%Y-%m-%d")
+        today_trades = [t for t in trades if t.get("exit_time", "").startswith(today)]
+        today_pnl = sum(t.get("pnl_amount", 0) for t in today_trades)
+        reasons.append(f"📊 Today: {len(today_trades)} trades, {today_pnl:+,.0f} IDR")
+        
+        lines = ["🤖 <b>WHY BOT IS IDLE</b>", "", "<b>FACTORS:</b>"]
+        lines.extend(reasons)
+        
+        if any("❌" in r for r in reasons):
+            lines.append("")
+            lines.append("<b>🎯 ACTION:</b>")
+            if win_rate < 40 and total_trades >= 5:
+                lines.append("- Wait for win rate > 40%")
+                lines.append("- Close positions at profit to boost win rate")
+            if open_count >= MAX_OPEN_POSITIONS:
+                lines.append("- Wait for TP/SL to hit")
+            if balance < min_order:
+                lines.append("- Deposit more IDR or wait for profitable closes")
+        else:
+            lines.append("")
+            lines.append("<b>🎯 BOT SHOULD BE ACTIVE</b>")
+        
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Error: {e}"
+
 def get_analytics_text():
     try:
         history_file = os.path.join(SCRIPT_DIR, "trade_history.json")
@@ -192,6 +268,9 @@ def handle_command(text, chat_id):
     if cmd == "/status-indodax":
         send_telegram("🏦 <b>INDODAX</b>\n" + get_status_text())
 
+    elif cmd == "/why-idle" or cmd == "/why":
+        send_telegram("🏦 <b>INDODAX</b>\n" + get_why_idle_text())
+
     elif cmd == "/portfolio-indodax":
         send_telegram("🏦 <b>INDODAX</b>\n" + get_portfolio_text())
 
@@ -248,8 +327,9 @@ def handle_command(text, chat_id):
             "/status-indodax - Bot status & balance\n"
             "/portfolio-indodax - All assets & total value\n"
             "/trades-indodax - Recent trade history\n"
-            "/analytics-indodax - Win rate, PnL, best/worst trade\n"
-            "/analyze-improvement - AI analysis & improvement suggestions\n"
+            "/analytics-indodax - Win rate, PnL, R/R ratio\n"
+            "/why-idle - Why bot is not trading\n"
+            "/analyze-improvement - AI analysis & suggestions\n"
             "/stop-indodax - Stop bot (with confirmation)\n"
             "/start-indodax - Start bot (with confirmation)\n"
             "/help - Show this message"
