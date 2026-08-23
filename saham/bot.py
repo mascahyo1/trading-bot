@@ -3,6 +3,7 @@ import logging
 import signal
 import os
 import sys
+import json
 import threading
 from datetime import datetime
 from config import (
@@ -27,6 +28,10 @@ except ImportError:
     WINDOWS = False
 
 
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+SAHAM_STATE_FILE = os.path.join(SCRIPT_DIR, "saham_state.json")
+
+
 class SahamBot:
     def __init__(self):
         self.logger = logging.getLogger("saham_bot")
@@ -44,7 +49,8 @@ class SahamBot:
         self.trades_today = 0
         self._stop_event = threading.Event()
         self._last_cash = 0
-        self.telegram_cmd = TelegramCommandHandler(bot_instance=self)
+        self._portfolio_cache = {"cash": 0, "stocks": [], "timestamp": ""}
+
 
     def is_market_open(self):
         now = now_jakarta()
@@ -219,6 +225,36 @@ class SahamBot:
             self.notifier.notify_error(f"[{symbol}] {str(e)}")
             self.telegram.notify_error(f"[{symbol}] {str(e)}")
 
+    def write_state_to_file(self):
+        try:
+            state = {
+                "timestamp": now_jakarta().isoformat(),
+                "cycle_count": self.cycle_count,
+                "cash": self._last_cash,
+                "portfolio": self._portfolio_cache,
+                "positions": {
+                    sym: pos.to_dict()
+                    for sym, pos in self.risk_manager.positions.items()
+                    if pos.status == "open"
+                },
+                "analytics": {
+                    "total_trades": len(self.risk_manager.trade_history),
+                    "total_pnl": self.risk_manager.get_total_pnl(),
+                    "win_rate": self.risk_manager.get_win_rate(),
+                    "open_positions": self.risk_manager.get_open_positions_count(),
+                    "total_fees": sum(
+                        t.get("total_fees", 0)
+                        for t in self.risk_manager.trade_history
+                    ),
+                    "daily_pnl": self.daily_pnl,
+                    "trades_today": self.trades_today,
+                },
+            }
+            with open(SAHAM_STATE_FILE, "w") as f:
+                json.dump(state, f, indent=2, default=str)
+        except Exception as e:
+            self.logger.warning(f"Write state error: {e}")
+
     def send_portfolio_report(self):
         try:
             self.update_cash_balance()
@@ -284,6 +320,14 @@ class SahamBot:
                     self.logger.warning(f"Error processing stock data: {e}")
 
             grand_total = cash + total_stock_value
+            self._portfolio_cache = {
+                "cash": cash,
+                "stocks": [
+                    {"code": d["code"], "lots": d["lots"], "price": d["current_price"]}
+                    for d in position_details.values()
+                ],
+                "timestamp": now_jakarta().isoformat(),
+            }
             self.telegram.notify_portfolio_detail(cash, position_details, grand_total)
 
         except Exception as e:
@@ -349,6 +393,7 @@ class SahamBot:
             self.logger.warning(f"Portfolio calc error: {e}")
 
         self.send_portfolio_report()
+        self.write_state_to_file()
 
         self.logger.info(f"Uptime: {str(now - self.start_time).split('.')[0]}")
         self.logger.info("-" * 65)
@@ -395,8 +440,8 @@ class SahamBot:
         self.logger.info("=" * 65)
 
         self.telegram.notify_start(TRADING_STOCKS)
-        self.telegram_cmd.start()
         self.send_portfolio_report()
+        self.write_state_to_file()
 
         while self.running:
             try:

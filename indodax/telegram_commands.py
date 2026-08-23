@@ -2,6 +2,7 @@
 """
 Telegram Bot Command Handler
 Listen for commands and respond. Sensitive actions require confirmation.
+Handles BOTH Indodax (crypto) and Saham (stock) commands.
 """
 import json
 import os
@@ -14,6 +15,9 @@ import threading
 from config import now_jakarta, format_datetime
 
 logger = logging.getLogger(__name__)
+
+SAHAM_SCRIPT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "saham")
+SAHAM_STATE_FILE = os.path.join(SAHAM_SCRIPT_DIR, "saham_state.json")
 
 TELEGRAM_TOKEN = ""
 TELEGRAM_CHAT_ID = ""
@@ -274,12 +278,285 @@ def get_analytics_text():
     except Exception as e:
         return escape_html(f"Error: {e}")
 
+def read_saham_state():
+    try:
+        if not os.path.exists(SAHAM_STATE_FILE):
+            return None
+        with open(SAHAM_STATE_FILE, "r") as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def get_saham_status_text():
+    state = read_saham_state()
+    if not state:
+        return "<b>SAHAM</b>\nBot tidak jalan atau state belum tersedia."
+    analytics = state.get("analytics", {})
+    prefix = "<b>SAHAM</b>\n"
+    lines = [
+        prefix + "<b>BOT STATUS</b>",
+        f"Status: Running" if state else "Status: Stopped",
+        f"Cash: {state.get('cash', 0):,.0f} IDR",
+        f"Open Positions: {analytics.get('open_positions', 0)}",
+        f"Total PnL (net): {analytics.get('total_pnl', 0):+,.0f} IDR",
+        f"Win Rate: {analytics.get('win_rate', 0)}% ({analytics.get('total_trades', 0)} trades)",
+        f"Total Fees: {analytics.get('total_fees', 0):,.0f} IDR",
+        f"Daily PnL: {analytics.get('daily_pnl', 0):+,.0f} IDR",
+        "",
+        f"⏰ {format_datetime()}",
+    ]
+    return "\n".join(lines)
+
+
+def get_saham_portfolio_text():
+    state = read_saham_state()
+    if not state:
+        return "<b>SAHAM</b>\nBot tidak jalan atau state belum tersedia."
+    portfolio = state.get("portfolio", {})
+    cash = portfolio.get("cash", 0)
+    stocks = portfolio.get("stocks", [])
+    prefix = "<b>SAHAM</b>\n"
+    lines = [
+        prefix + "<b>📊 ASET PER SAHAM</b>",
+        f"⏰ {format_datetime()}",
+        "",
+        f"<b>💰 CASH: {cash:,.0f} IDR</b>",
+        "",
+    ]
+    if stocks:
+        lines.append("<b>📈 PER SAHAM:</b>")
+        lines.append("")
+        total_value = 0
+        for s in stocks:
+            code = s.get("code", "?")
+            lots = s.get("lots", 0)
+            price = s.get("price", 0)
+            value = lots * 100 * price
+            total_value += value
+            lines.append(f"<b>{code}</b>")
+            lines.append(f"   Lot: {lots} ({lots * 100} lembar)")
+            lines.append(f"   Harga: {price:,.0f} IDR")
+            lines.append(f"   <b>Total: {value:,.0f} IDR</b>")
+            lines.append("")
+    lines.append(f"<b>💵 Total Saham: {total_value:,.0f} IDR</b>")
+    lines.append(f"<b>💰 Cash: {cash:,.0f} IDR</b>")
+    lines.append(f"<b>🏦 GRAND TOTAL: {cash + total_value:,.0f} IDR</b>")
+    return "\n".join(lines)
+
+
+def get_saham_trades_text():
+    try:
+        history_file = os.path.join(SAHAM_SCRIPT_DIR, "trade_history.json")
+        if not os.path.exists(history_file):
+            return "<b>SAHAM</b>\nNo trades yet"
+        with open(history_file) as f:
+            trades = json.load(f)
+        if not trades:
+            return "<b>SAHAM</b>\nNo trades yet"
+        prefix = "<b>SAHAM</b>\n"
+        lines = [prefix + "<b>📜 RECENT TRADES</b>"]
+        for t in trades[-5:]:
+            pnl = t.get("pnl_amount", 0)
+            sign = "+" if pnl >= 0 else ""
+            pnl_emoji = "🟢" if pnl >= 0 else "🔴"
+            lines.append(
+                f"{pnl_emoji} {t.get('code', '?')} @ {t.get('exit_price', 0):,.0f}\n"
+                f"   PnL (net): {sign}{pnl:,.0f} IDR ({t.get('pnl_pct', 0):+.2f}%)"
+            )
+        return "\n".join(lines)
+    except Exception as e:
+        return f"<b>SAHAM</b>\nError: {e}"
+
+
+def get_saham_analytics_text():
+    try:
+        history_file = os.path.join(SAHAM_SCRIPT_DIR, "trade_history.json")
+        if not os.path.exists(history_file):
+            return "<b>SAHAM</b>\nNo trade data yet"
+        with open(history_file) as f:
+            trades = json.load(f)
+        if not trades:
+            return "<b>SAHAM</b>\nNo trade data yet"
+        total_trades = len(trades)
+        wins = [t for t in trades if t.get("pnl_amount", 0) > 0]
+        losses = [t for t in trades if t.get("pnl_amount", 0) <= 0]
+        total_pnl = sum(t.get("pnl_amount", 0) for t in trades)
+        total_fees = sum(t.get("total_fees", 0) for t in trades)
+        gross_pnl = sum(t.get("gross_pnl", 0) for t in trades)
+        win_rate = len(wins) / total_trades * 100 if total_trades > 0 else 0
+        avg_win = sum(t["pnl_amount"] for t in wins) / len(wins) if wins else 0
+        avg_loss = sum(t["pnl_amount"] for t in losses) / len(losses) if losses else 0
+        best = max(trades, key=lambda t: t.get("pnl_amount", 0)) if trades else None
+        worst = min(trades, key=lambda t: t.get("pnl_amount", 0)) if trades else None
+        daily_pnl = 0
+        today = now_jakarta().strftime("%Y-%m-%d")
+        for t in trades:
+            if t.get("exit_time", "").startswith(today):
+                daily_pnl += t.get("pnl_amount", 0)
+        sign_pnl = "+" if total_pnl >= 0 else ""
+        sign_daily = "+" if daily_pnl >= 0 else ""
+        prefix = "<b>SAHAM</b>\n"
+        lines = [
+            prefix + "<b>📊 SAHAM ANALYTICS</b>",
+            f"Total Trades: {total_trades}",
+            f"Win Rate: {win_rate:.1f}% ({len(wins)}W/{len(losses)}L)",
+            f"Daily PnL (net): {sign_daily}{daily_pnl:,.0f} IDR",
+            f"Total PnL (net): {sign_pnl}{total_pnl:,.0f} IDR",
+            f"Total Fees: {total_fees:,.0f} IDR",
+            f"Gross PnL: {gross_pnl:+,.0f} IDR",
+        ]
+        if avg_loss != 0:
+            rr = abs(avg_win / avg_loss) if avg_loss != 0 else 0
+            lines.append(f"Risk/Reward: 1:{rr:.1f}")
+        if best:
+            sign_b = "+" if best['pnl_amount'] >= 0 else ""
+            lines.append(f"Best: {best.get('code', '?')} {sign_b}{best['pnl_amount']:,.0f}")
+        if worst:
+            sign_w = "+" if worst['pnl_amount'] >= 0 else ""
+            lines.append(f"Worst: {worst.get('code', '?')} {sign_w}{worst['pnl_amount']:,.0f}")
+        return "\n".join(lines)
+    except Exception as e:
+        return escape_html(f"<b>SAHAM</b>\nError: {e}")
+
+
+def get_saham_why_idle_text():
+    state = read_saham_state()
+    if not state:
+        return "<b>SAHAM</b>\nBot tidak jalan atau state belum tersedia."
+    analytics = state.get("analytics", {})
+    cash = state.get("cash", 0)
+    open_count = analytics.get("open_positions", 0)
+    total_trades = analytics.get("total_trades", 0)
+    win_rate = analytics.get("win_rate", 0)
+    reasons = []
+    if total_trades >= 5 and win_rate < 40:
+        reasons.append(f"BLOCKED: Win rate {win_rate:.0f}% &lt; 40%")
+    elif win_rate >= 40:
+        reasons.append(f"OK: Win rate {win_rate:.0f}%")
+    else:
+        reasons.append(f"Win rate {win_rate:.0f}% (need 5+ trades)")
+    if open_count >= 5:
+        reasons.append(f"BLOCKED: Max positions ({open_count}/5)")
+    else:
+        reasons.append(f"OK: Positions available ({open_count}/5)")
+    min_order = 75000 * 1.5
+    if cash < min_order:
+        reasons.append(f"BLOCKED: Cash {cash:,.0f} &lt; {min_order:,.0f} IDR")
+    else:
+        reasons.append(f"OK: Cash {cash:,.0f} IDR")
+    reasons.append(f"Today: {analytics.get('trades_today', 0)} trades, {analytics.get('daily_pnl', 0):+,.0f} IDR")
+    prefix = "<b>SAHAM</b>\n"
+    lines = [prefix + "<b>WHY BOT IS IDLE</b>", "", "<b>FACTORS:</b>"]
+    lines.extend(reasons)
+    if any("BLOCKED" in r for r in reasons):
+        lines.append("")
+        lines.append("<b>ACTION:</b>")
+        if win_rate < 40 and total_trades >= 5:
+            lines.append("- Wait for win rate &gt; 40%")
+        if open_count >= 5:
+            lines.append("- Wait for TP/SL to hit")
+        if cash < min_order:
+            lines.append("- Deposit more IDR")
+    else:
+        lines.append("")
+        lines.append("Bot should be active!")
+    return "\n".join(lines)
+
+
+def get_saham_fees_text():
+    try:
+        history_file = os.path.join(SAHAM_SCRIPT_DIR, "trade_history.json")
+        total_fees = 0
+        total_buy_fees = 0
+        total_sell_fees = 0
+        if os.path.exists(history_file):
+            with open(history_file) as f:
+                trades = json.load(f)
+            for t in trades:
+                total_buy_fees += t.get("buy_fees", 0)
+                total_sell_fees += t.get("sell_fees", 0)
+                total_fees += t.get("total_fees", 0)
+        prefix = "<b>SAHAM</b>\n"
+        lines = [
+            prefix + "<b>💰 TRANSACTION FEES</b>",
+            "",
+            "<b>Per Trade:</b>",
+            f"  Biaya Beli: 0.14%",
+            f"  Biaya Jual: 0.34%",
+            f"  Round-trip: 0.48%",
+            "",
+            "<b>Breakdown Beli:</b>",
+            f"  Broker: 0.10%",
+            f"  Clearing: 0.02%",
+            f"  BEI: 0.02%",
+            f"  <b>Total: 0.14%</b>",
+            "",
+            "<b>Breakdown Jual:</b>",
+            f"  Broker: 0.10%",
+            f"  Clearing: 0.02%",
+            f"  BEI: 0.02%",
+            f"  PPN: 0.10%",
+            f"  PPh Final: 0.10%",
+            f"  <b>Total: 0.34%</b>",
+            "",
+            "<b>Lifetime Stats:</b>",
+            f"  Total Biaya: {total_fees:,.0f} IDR",
+            f"  Biaya Beli: {total_buy_fees:,.0f} IDR",
+            f"  Biaya Jual: {total_sell_fees:,.0f} IDR",
+            "",
+            "<i>Semua PnL di bot ini sudah NET (setelah potong biaya)</i>",
+        ]
+        return "\n".join(lines)
+    except Exception as e:
+        return f"<b>SAHAM</b>\nError: {e}"
+
+
+def handle_saham_command(cmd, chat_id):
+    prefix = "<b>SAHAM</b>\n"
+    if cmd in ("/status-saham", "/status"):
+        send_telegram(get_saham_status_text())
+    elif cmd in ("/saham", "/portfolio-saham", "/portfolio"):
+        send_telegram(get_saham_portfolio_text())
+    elif cmd in ("/asset-saham", "/asset", "/aset"):
+        send_telegram(get_saham_portfolio_text())
+    elif cmd in ("/trades-saham", "/trades"):
+        send_telegram(get_saham_trades_text())
+    elif cmd in ("/analytics-saham", "/stats-saham", "/analytics", "/stats"):
+        send_telegram(get_saham_analytics_text())
+    elif cmd in ("/why-idle-saham", "/why-saham", "/why-idle", "/why"):
+        send_telegram(get_saham_why_idle_text())
+    elif cmd in ("/fees-saham", "/fees", "/biaya"):
+        send_telegram(get_saham_fees_text())
+    elif cmd in ("/stop-saham", "/stop"):
+        send_telegram(prefix + "Saham bot tidak dihandle di sini. Matikan manual via SSH.")
+    elif cmd in ("/start-saham", "/start"):
+        send_telegram(prefix + "Saham bot tidak dihandle di sini. Nyalakan manual via SSH.")
+    else:
+        return False
+    return True
+
+
 PENDING_CONFIRMATION = {}
 
 def handle_command(text, chat_id):
     text = text.strip()
     cmd = text.lower().split()[0] if text else ""
     prefix = "<b>INDODAX</b>\n"
+
+    saham_cmds = (
+        "/status-saham", "/status",
+        "/saham", "/portfolio-saham", "/portfolio",
+        "/asset-saham", "/asset", "/aset",
+        "/trades-saham", "/trades",
+        "/analytics-saham", "/stats-saham", "/analytics", "/stats",
+        "/why-idle-saham", "/why-saham", "/why-idle", "/why",
+        "/fees-saham", "/fees", "/biaya",
+        "/stop-saham", "/start-saham", "/stop", "/start",
+    )
+    if cmd in saham_cmds:
+        if handle_saham_command(cmd, chat_id):
+            return
 
     if cmd == "/status-indodax":
         send_telegram(prefix + get_status_text())
@@ -336,15 +613,32 @@ def handle_command(text, chat_id):
             send_telegram(prefix + "Are you sure you want to START the bot?", reply_markup=keyboard)
     elif cmd == "/help":
         send_telegram(
-            prefix + "<b>BOT COMMANDS</b>\n"
+            "<b>🤖 TRADING BOT COMMANDS</b>\n"
+            "\n"
+            "<b>═══ INDODAX (Crypto) ═══</b>\n"
             "/status-indodax - Bot status & balance\n"
             "/portfolio-indodax - All assets & total value\n"
             "/trades-indodax - Recent trade history\n"
             "/analytics-indodax - Win rate, PnL, R/R ratio\n"
             "/why-idle-indodax - Why bot is not trading\n"
-            "/analyze-improvement-indodax - AI analysis & suggestions\n"
+            "/analyze-improvement-indodax - AI analysis\n"
             "/stop-indodax - Stop bot (with confirmation)\n"
             "/start-indodax - Start bot (with confirmation)\n"
+            "\n"
+            "<b>═══ SAHAM (Stocks) ═══</b>\n"
+            "/status-saham - Bot status & portfolio\n"
+            "/saham - Portfolio from Ajaib\n"
+            "/asset-saham - Asset per stock + grand total\n"
+            "/trades-saham - Recent trade history\n"
+            "/analytics-saham - Win rate, PnL, R/R ratio\n"
+            "/why-idle-saham - Why bot is not trading\n"
+            "/fees-saham - Transaction fees breakdown\n"
+            "\n"
+            "<b>═══ ALIASES ═══</b>\n"
+            "/status, /portfolio, /asset, /aset, /trades\n"
+            "/analytics, /stats, /why, /why-idle\n"
+            "/fees, /biaya\n"
+            "\n"
             "/help - Show this message"
         )
     elif text.startswith("/"):
