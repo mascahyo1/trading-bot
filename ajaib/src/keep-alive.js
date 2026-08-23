@@ -6,9 +6,14 @@
  *   TELEGRAM_CHAT_ID    - Chat ID tujuan pesan
  *
  * Contoh entry crontab:
- *   *\/3 * * * * cd /path/to/trading/ajaib && \
+ *   */10 * * * * cd /path/to/trading-bot/ajaib && \
  *     TELEGRAM_BOT_TOKEN=xxx TELEGRAM_CHAT_ID=yyy \
  *     /usr/bin/node src/keep-alive.js >> logs/keep-alive.log 2>&1
+ *
+ * Anti-detection:
+ *   - Interval crontab 10 menit (bukan 3 menit) untuk kurangi fingerprint
+ *   - Random delay 0-60 detik sebelum scraping untuk hindari pattern detection
+ *   - Retry 3x dengan delay 30 detik jika Cloudflare challenge terjadi
  *
  * Fungsi utama:
  *   1. SESSION CHECK   - Verifikasi session login Ajaib masih valid.
@@ -250,6 +255,14 @@ async function getPortfolio(page) {
  */
 async function main() {
     await ensureDirs();
+
+    // Random delay 0-60 detik untuk hindari pattern detection Cloudflare
+    const randomDelay = Math.floor(Math.random() * 60);
+    if (randomDelay > 0) {
+        log(`Random anti-detection delay: ${randomDelay}s`);
+        await new Promise(r => setTimeout(r, randomDelay * 1000));
+    }
+
     log('Starting Ajaib bot check...');
 
     if (!fs.existsSync(SESSION_FILE)) {
