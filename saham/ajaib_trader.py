@@ -124,7 +124,7 @@ class AjaibTrader:
                 return result;
             }""")
 
-            await context.storageState(path=self.session_file)
+            await context.storage_state(path=self.session_file)
             await page.close()
             await context.close()
             return portfolio
@@ -166,7 +166,7 @@ class AjaibTrader:
                 await confirm_button.first.click()
                 await page.wait_for_timeout(2000)
 
-            await context.storageState(path=self.session_file)
+            await context.storage_state(path=self.session_file)
             await page.close()
             await context.close()
 
@@ -211,7 +211,7 @@ class AjaibTrader:
                 await confirm_button.first.click()
                 await page.wait_for_timeout(2000)
 
-            await context.storageState(path=self.session_file)
+            await context.storage_state(path=self.session_file)
             await page.close()
             await context.close()
 
