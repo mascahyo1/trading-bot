@@ -5,6 +5,8 @@ import os
 import sys
 import threading
 from datetime import datetime
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import now_jakarta, format_datetime
 
 from config import (
