@@ -45,7 +45,7 @@ class AjaibTrader:
             await self._playwright.stop()
 
     async def _ensure_logged_in(self, context):
-        page = await context.newPage()
+        page = await context.new_page()
         await page.goto(f"{self.base_url}/home", wait_until="networkidle", timeout=60000)
         url = page.url
         await page.close()
@@ -62,7 +62,7 @@ class AjaibTrader:
                 logger.error("Session expired")
                 return None
 
-            page = await context.newPage()
+            page = await context.new_page()
             await page.goto(f"{self.base_url}/home", wait_until="networkidle", timeout=30000)
 
             portfolio = await page.evaluate("""() => {
@@ -145,7 +145,7 @@ class AjaibTrader:
             if not await self._ensure_logged_in(context):
                 return {"success": False, "error": "Session expired"}
 
-            page = await context.newPage()
+            page = await context.new_page()
             await page.goto(f"{self.base_url}/stock/{code}", wait_until="networkidle", timeout=30000)
 
             buy_button = page.locator("button:has-text('Beli'), button:has-text('Buy'), [data-testid='buy-button']")
@@ -190,7 +190,7 @@ class AjaibTrader:
             if not await self._ensure_logged_in(context):
                 return {"success": False, "error": "Session expired"}
 
-            page = await context.newPage()
+            page = await context.new_page()
             await page.goto(f"{self.base_url}/stock/{code}", wait_until="networkidle", timeout=30000)
 
             sell_button = page.locator("button:has-text('Jual'), button:has-text('Sell'), [data-testid='sell-button']")
