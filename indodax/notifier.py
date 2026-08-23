@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from config import TZ_JAKARTA
 
 LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
-MAX_LOG_DAYS = 7
+MAX_LOG_DAYS = 180
 
 
 class DailyFileHandler(logging.Handler):
