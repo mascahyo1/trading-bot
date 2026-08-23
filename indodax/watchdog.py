@@ -104,9 +104,9 @@ def check_bot_health():
         age_seconds = time.time() - mod_time
         if age_seconds > 1200:
             errors.append(f"Log tidak update {age_seconds/60:.0f} min")
-    result = os.popen("systemctl is-active trading-bot.service").read().strip()
-    if result != "active":
-        errors.append(f"Service: {result}")
+    result = os.popen("pgrep -f 'indodax/bot.py'").read().strip()
+    if not result:
+        errors.append("Bot process not running")
     return errors
 
 def main():
