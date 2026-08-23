@@ -5,12 +5,12 @@ Listen for commands and respond. Sensitive actions require confirmation.
 """
 import json
 import os
+import sys
 import time
 import logging
 import urllib.request
 import urllib.error
 import threading
-from datetime import datetime
 from config import now_jakarta, format_datetime
 
 logger = logging.getLogger(__name__)
@@ -75,7 +75,6 @@ def get_portfolio_text():
         bal = ex.get_balance()
         if bal.get("error"):
             return "Error fetching portfolio"
-
         total_idr = 0
         lines = ["<b>PORTFOLIO</b>"]
         for b in bal.get("balances", []):
@@ -141,23 +140,18 @@ def get_why_idle_text():
         if os.path.exists(history_file):
             with open(history_file) as f:
                 trades = json.load(f)
-        
         sys.path.insert(0, SCRIPT_DIR)
         from config import MAX_OPEN_POSITIONS, MIN_ORDER_IDR, now_jakarta
-        
         reasons = []
-        
         total_trades = len(trades)
         wins = [t for t in trades if t.get("pnl_amount", 0) > 0]
         win_rate = len(wins) / total_trades * 100 if total_trades > 0 else 0
-        
         if total_trades >= 5 and win_rate < 40:
             reasons.append(f"BLOCKED: Win rate {win_rate:.0f}% < 40%")
         elif win_rate >= 40:
             reasons.append(f"OK: Win rate {win_rate:.0f}%")
         else:
             reasons.append(f"Win rate {win_rate:.0f}% (need 5+ trades)")
-        
         open_count = 0
         try:
             from exchange import IndodaxExchange
@@ -172,30 +166,21 @@ def get_why_idle_text():
                         open_count += 1
         except Exception:
             balance = 0
-        
         if open_count >= MAX_OPEN_POSITIONS:
             reasons.append(f"BLOCKED: Max positions ({open_count}/{MAX_OPEN_POSITIONS})")
         else:
             reasons.append(f"OK: Positions available ({open_count}/{MAX_OPEN_POSITIONS})")
-        
         min_order = MIN_ORDER_IDR * 1.5
         if balance < min_order:
             reasons.append(f"BLOCKED: Balance {balance:,.0f} < {min_order:,.0f} IDR")
         else:
             reasons.append(f"OK: Balance {balance:,.0f} IDR")
-        
         today = now_jakarta().strftime("%Y-%m-%d")
         today_trades = [t for t in trades if t.get("exit_time", "").startswith(today)]
         today_pnl = sum(t.get("pnl_amount", 0) for t in today_trades)
         reasons.append(f"Today: {len(today_trades)} trades, {today_pnl:+,.0f} IDR")
-        
-        lines = [
-            "<b>WHY BOT IS IDLE</b>",
-            "",
-            "<b>FACTORS:</b>",
-        ]
+        lines = ["<b>WHY BOT IS IDLE</b>", "", "<b>FACTORS:</b>"]
         lines.extend(reasons)
-        
         if any("BLOCKED" in r for r in reasons):
             lines.append("")
             lines.append("<b>ACTION:</b>")
@@ -209,7 +194,6 @@ def get_why_idle_text():
         else:
             lines.append("")
             lines.append("Bot should be active!")
-        
         return "\n".join(lines)
     except Exception as e:
         return f"Error: {e}"
@@ -218,47 +202,47 @@ def get_analytics_text():
     try:
         history_file = os.path.join(SCRIPT_DIR, "trade_history.json")
         if not os.path.exists(history_file):
-            return "📊 No trade data yet"
+            return "No trade data yet"
         with open(history_file) as f:
             trades = json.load(f)
         if not trades:
-            return "📊 No trade data yet"
-
+            return "No trade data yet"
         total_trades = len(trades)
         wins = [t for t in trades if t.get("pnl_amount", 0) > 0]
         losses = [t for t in trades if t.get("pnl_amount", 0) <= 0]
         total_pnl = sum(t.get("pnl_amount", 0) for t in trades)
         win_rate = len(wins) / total_trades * 100 if total_trades > 0 else 0
-
         avg_win = sum(t["pnl_amount"] for t in wins) / len(wins) if wins else 0
         avg_loss = sum(t["pnl_amount"] for t in losses) / len(losses) if losses else 0
-
         best = max(trades, key=lambda t: t.get("pnl_amount", 0)) if trades else None
         worst = min(trades, key=lambda t: t.get("pnl_amount", 0)) if trades else None
-
         daily_pnl = 0
         today = now_jakarta().strftime("%Y-%m-%d")
         for t in trades:
             if t.get("exit_time", "").startswith(today):
                 daily_pnl += t.get("pnl_amount", 0)
-
+        sign_pnl = "+" if total_pnl >= 0 else ""
+        sign_daily = "+" if daily_pnl >= 0 else ""
+        sign_win = "+" if avg_win >= 0 else ""
+        sign_loss = "+" if avg_loss >= 0 else ""
         lines = [
-            "🏦 <b>INDODAX ANALYTICS</b>",
-            f"📊 Total Trades: {total_trades}",
-            f"🎯 Win Rate: {win_rate:.1f}% ({len(wins)}W/{len(losses)}L)",
-            f"📈 Daily PnL: {daily_pnl:+,.0f} IDR",
-            f"💰 Total PnL: {total_pnl:+,.0f} IDR",
-            f"📊 Avg Win: {avg_win:+,.0f} IDR",
-            f"📉 Avg Loss: {avg_loss:+,.0f} IDR",
+            "<b>INDODAX ANALYTICS</b>",
+            f"Total Trades: {total_trades}",
+            f"Win Rate: {win_rate:.1f}% ({len(wins)}W/{len(losses)}L)",
+            f"Daily PnL: {sign_daily}{daily_pnl:,.0f} IDR",
+            f"Total PnL: {sign_pnl}{total_pnl:,.0f} IDR",
+            f"Avg Win: {sign_win}{avg_win:,.0f} IDR",
+            f"Avg Loss: {sign_loss}{avg_loss:,.0f} IDR",
         ]
         if avg_loss != 0:
             rr = abs(avg_win / avg_loss) if avg_loss != 0 else 0
-            lines.append(f"⚖️ Risk/Reward: 1:{rr:.1f}")
+            lines.append(f"Risk/Reward: 1:{rr:.1f}")
         if best:
-            lines.append(f"✅ Best: {best['symbol']} {best['pnl_amount']:+,.0f}")
+            sign_b = "+" if best['pnl_amount'] >= 0 else ""
+            lines.append(f"Best: {best['symbol']} {sign_b}{best['pnl_amount']:,.0f}")
         if worst:
-            lines.append(f"❌ Worst: {worst['symbol']} {worst['pnl_amount']:+,.0f}")
-
+            sign_w = "+" if worst['pnl_amount'] >= 0 else ""
+            lines.append(f"Worst: {worst['symbol']} {sign_w}{worst['pnl_amount']:,.0f}")
         return "\n".join(lines)
     except Exception as e:
         return f"Error: {e}"
@@ -268,34 +252,29 @@ PENDING_CONFIRMATION = {}
 def handle_command(text, chat_id):
     text = text.strip()
     cmd = text.lower().split()[0] if text else ""
+    prefix = "<b>INDODAX</b>\n"
 
     if cmd == "/status-indodax":
-        send_telegram("🏦 <b>INDODAX</b>\n" + get_status_text())
-
+        send_telegram(prefix + get_status_text())
     elif cmd == "/why-idle" or cmd == "/why":
-        send_telegram("🏦 <b>INDODAX</b>\n" + get_why_idle_text())
-
+        send_telegram(prefix + get_why_idle_text())
     elif cmd == "/portfolio-indodax":
-        send_telegram("🏦 <b>INDODAX</b>\n" + get_portfolio_text())
-
+        send_telegram(prefix + get_portfolio_text())
     elif cmd == "/trades-indodax":
-        send_telegram("🏦 <b>INDODAX</b>\n" + get_trades_text())
-
+        send_telegram(prefix + get_trades_text())
     elif cmd == "/analytics-indodax" or cmd == "/stats-indodax":
-        send_telegram("🏦 <b>INDODAX</b>\n" + get_analytics_text())
-
+        send_telegram(prefix + get_analytics_text())
     elif cmd == "/analyze-improvement":
-        send_telegram("🏦 <b>INDODAX</b>\n🔍 Analyzing bot performance...")
+        send_telegram(prefix + "Analyzing bot performance...")
         try:
             sys.path.insert(0, SCRIPT_DIR)
             from monitor import run_analysis
             run_analysis()
         except Exception as e:
-            send_telegram(f"🏦 <b>INDODAX</b>\n❌ Analysis failed: {str(e)[:200]}")
-
+            send_telegram(prefix + f"Analysis failed: {str(e)[:200]}")
     elif cmd == "/stop-indodax":
         if chat_id in PENDING_CONFIRMATION and PENDING_CONFIRMATION[chat_id] == "stop":
-            send_telegram("🏦 <b>INDODAX</b>\n🛑 Bot stopping...")
+            send_telegram(prefix + "Bot stopping...")
             if BOT_INSTANCE:
                 BOT_INSTANCE.stop()
             PENDING_CONFIRMATION.pop(chat_id, None)
@@ -303,15 +282,14 @@ def handle_command(text, chat_id):
             PENDING_CONFIRMATION[chat_id] = "stop"
             keyboard = json.dumps({
                 "inline_keyboard": [[
-                    {"text": "✅ Yes, Stop Bot", "callback_data": "confirm_stop"},
-                    {"text": "❌ Cancel", "callback_data": "cancel"}
+                    {"text": "Yes, Stop Bot", "callback_data": "confirm_stop"},
+                    {"text": "Cancel", "callback_data": "cancel"}
                 ]]
             })
-            send_telegram("🏦 <b>INDODAX</b>\n⚠️ Are you sure you want to STOP the bot?", reply_markup=keyboard)
-
+            send_telegram(prefix + "Are you sure you want to STOP the bot?", reply_markup=keyboard)
     elif cmd == "/start-indodax":
         if chat_id in PENDING_CONFIRMATION and PENDING_CONFIRMATION[chat_id] == "start":
-            send_telegram("🏦 <b>INDODAX</b>\n🚀 Bot starting...")
+            send_telegram(prefix + "Bot starting...")
             if BOT_INSTANCE:
                 BOT_INSTANCE.start()
             PENDING_CONFIRMATION.pop(chat_id, None)
@@ -319,15 +297,14 @@ def handle_command(text, chat_id):
             PENDING_CONFIRMATION[chat_id] = "start"
             keyboard = json.dumps({
                 "inline_keyboard": [[
-                    {"text": "✅ Yes, Start Bot", "callback_data": "confirm_start"},
-                    {"text": "❌ Cancel", "callback_data": "cancel"}
+                    {"text": "Yes, Start Bot", "callback_data": "confirm_start"},
+                    {"text": "Cancel", "callback_data": "cancel"}
                 ]]
             })
-            send_telegram("🏦 <b>INDODAX</b>\n⚠️ Are you sure you want to START the bot?", reply_markup=keyboard)
-
+            send_telegram(prefix + "Are you sure you want to START the bot?", reply_markup=keyboard)
     elif cmd == "/help":
         send_telegram(
-            "🏦 <b>INDODAX BOT COMMANDS</b>\n"
+            prefix + "<b>BOT COMMANDS</b>\n"
             "/status-indodax - Bot status & balance\n"
             "/portfolio-indodax - All assets & total value\n"
             "/trades-indodax - Recent trade history\n"
@@ -338,26 +315,24 @@ def handle_command(text, chat_id):
             "/start-indodax - Start bot (with confirmation)\n"
             "/help - Show this message"
         )
-
     elif text.startswith("/"):
         send_telegram("Unknown command. Type /help for available commands.")
 
 def handle_callback(data, chat_id):
+    prefix = "<b>INDODAX</b>\n"
     if data == "confirm_stop":
-        send_telegram("🛑 Bot stopping...")
+        send_telegram(prefix + "Bot stopping...")
         if BOT_INSTANCE:
             BOT_INSTANCE.stop()
         PENDING_CONFIRMATION.pop(chat_id, None)
     elif data == "confirm_start":
-        send_telegram("🚀 Bot starting...")
+        send_telegram(prefix + "Bot starting...")
         if BOT_INSTANCE:
             BOT_INSTANCE.start()
         PENDING_CONFIRMATION.pop(chat_id, None)
     elif data == "cancel":
-        send_telegram("✅ Cancelled")
+        send_telegram("Cancelled")
         PENDING_CONFIRMATION.pop(chat_id, None)
-
-import sys
 
 class TelegramCommandHandler:
     def __init__(self, bot_instance=None):
