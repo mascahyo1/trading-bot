@@ -192,7 +192,8 @@ async function getPortfolio(page) {
                 }
             }
 
-            // Scan saham
+            // Scan saham - allText harus di-define di scope luar fallback
+            const allText = document.body.innerText;
             const lines = allText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
             for (let i = 0; i < lines.length; i++) {
                 const line = lines[i];
