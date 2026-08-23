@@ -202,18 +202,18 @@ def run_analysis():
     llm_analysis = analyze_with_llm(metrics, logs_summary)
     
     msg = (
-        f"🏦 <b>INDODAX BOT ANALYSIS</b>\n"
-        f"🕐 {format_datetime()}\n"
+        f"<b>INDODAX BOT ANALYSIS</b>\n"
+        f"{format_datetime()}\n"
         f"\n"
-        f"<b>📊 PERFORMANCE</b>\n"
+        f"<b>PERFORMANCE</b>\n"
         f"Win Rate: {metrics.get('win_rate', 0)}%\n"
         f"Total PnL: {metrics.get('total_pnl', 0):+,.0f} IDR\n"
         f"Today: {metrics.get('today_trades', 0)} trades, {metrics.get('today_pnl', 0):+,.0f} IDR\n"
         f"\n"
-        f"<b>🔍 ANALYSIS</b>\n"
+        f"<b>ANALYSIS</b>\n"
         f"{llm_analysis}\n"
         f"\n"
-        f"<b>⚠️ ERRORS (24h):</b> {len(logs_summary['errors'])}"
+        f"<b>ERRORS (24h):</b> {len(logs_summary['errors'])}"
     )
     
     if len(msg) > 4000:
