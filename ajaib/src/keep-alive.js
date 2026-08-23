@@ -6,7 +6,7 @@
  *   TELEGRAM_CHAT_ID    - Chat ID tujuan pesan
  *
  * Contoh entry crontab:
- *   */10 * * * * cd /path/to/trading-bot/ajaib && \
+ *   every 10 minutes: cd /path/to/trading-bot/ajaib && \
  *     TELEGRAM_BOT_TOKEN=xxx TELEGRAM_CHAT_ID=yyy \
  *     /usr/bin/node src/keep-alive.js >> logs/keep-alive.log 2>&1
  *
