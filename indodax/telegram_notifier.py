@@ -63,11 +63,13 @@ class TelegramNotifier:
         self.send(msg)
 
     def notify_signal(self, symbol, signal, confidence, indicators):
+        rsi = str(indicators.get('rsi', 'N/A')).replace('<', '&lt;').replace('>', '&gt;')
+        macd = str(indicators.get('macd_histogram', 'N/A')).replace('<', '&lt;').replace('>', '&gt;')
         msg = (
             f"Signal: <b>{signal.upper()}</b> {symbol}\n"
             f"Confidence: {confidence:.0%}\n"
-            f"RSI: {indicators.get('rsi', 'N/A')} | "
-            f"MACD: {indicators.get('macd_histogram', 'N/A')}\n"
+            f"RSI: {rsi} | "
+            f"MACD: {macd}\n"
         )
         self.send(msg)
 

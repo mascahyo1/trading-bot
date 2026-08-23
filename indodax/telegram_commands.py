@@ -36,6 +36,13 @@ def load_env():
                 elif k.strip() == "Telegram_Chat_ID":
                     TELEGRAM_CHAT_ID = v.strip()
 
+def escape_html(text):
+    """Escape HTML special characters for Telegram HTML parse mode"""
+    text = text.replace("&", "&amp;")
+    text = text.replace("<", "&lt;")
+    text = text.replace(">", "&gt;")
+    return text
+
 def send_telegram(text, reply_markup=None):
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
         return
@@ -167,7 +174,7 @@ def get_why_idle_text():
         wins = [t for t in trades if t.get("pnl_amount", 0) > 0]
         win_rate = len(wins) / total_trades * 100 if total_trades > 0 else 0
         if total_trades >= 5 and win_rate < 40:
-            reasons.append(f"BLOCKED: Win rate {win_rate:.0f}% < 40%")
+            reasons.append(f"BLOCKED: Win rate {win_rate:.0f}% &lt; 40%")
         elif win_rate >= 40:
             reasons.append(f"OK: Win rate {win_rate:.0f}%")
         else:
@@ -192,7 +199,7 @@ def get_why_idle_text():
             reasons.append(f"OK: Positions available ({open_count}/{MAX_OPEN_POSITIONS})")
         min_order = MIN_ORDER_IDR * 1.5
         if balance < min_order:
-            reasons.append(f"BLOCKED: Balance {balance:,.0f} < {min_order:,.0f} IDR")
+            reasons.append(f"BLOCKED: Balance {balance:,.0f} &lt; {min_order:,.0f} IDR")
         else:
             reasons.append(f"OK: Balance {balance:,.0f} IDR")
         today = now_jakarta().strftime("%Y-%m-%d")
@@ -205,7 +212,7 @@ def get_why_idle_text():
             lines.append("")
             lines.append("<b>ACTION:</b>")
             if win_rate < 40 and total_trades >= 5:
-                lines.append("- Wait for win rate > 40%")
+                lines.append("- Wait for win rate &gt; 40%")
                 lines.append("- Close positions at profit")
             if open_count >= MAX_OPEN_POSITIONS:
                 lines.append("- Wait for TP/SL to hit")
@@ -265,7 +272,7 @@ def get_analytics_text():
             lines.append(f"Worst: {worst['symbol']} {sign_w}{worst['pnl_amount']:,.0f}")
         return "\n".join(lines)
     except Exception as e:
-        return f"Error: {e}"
+        return escape_html(f"Error: {e}")
 
 PENDING_CONFIRMATION = {}
 
@@ -275,23 +282,23 @@ def handle_command(text, chat_id):
     prefix = "<b>INDODAX</b>\n"
 
     if cmd == "/status-indodax":
-        send_telegram(prefix + get_status_text())
+        send_telegram(escape_html(prefix) + get_status_text())
     elif cmd == "/why-idle" or cmd == "/why":
-        send_telegram(prefix + get_why_idle_text())
+        send_telegram(escape_html(prefix) + get_why_idle_text())
     elif cmd == "/portfolio-indodax":
-        send_telegram(prefix + get_portfolio_text())
+        send_telegram(escape_html(prefix) + get_portfolio_text())
     elif cmd == "/trades-indodax":
-        send_telegram(prefix + get_trades_text())
+        send_telegram(escape_html(prefix) + get_trades_text())
     elif cmd == "/analytics-indodax" or cmd == "/stats-indodax":
-        send_telegram(prefix + get_analytics_text())
+        send_telegram(escape_html(prefix) + get_analytics_text())
     elif cmd == "/analyze-improvement":
-        send_telegram(prefix + "Analyzing bot performance...")
+        send_telegram(escape_html(prefix) + "Analyzing bot performance...")
         try:
             sys.path.insert(0, SCRIPT_DIR)
             from monitor import run_analysis
             run_analysis()
         except Exception as e:
-            send_telegram(prefix + f"Analysis failed: {str(e)[:200]}")
+            send_telegram(escape_html(prefix) + "Analysis failed: " + escape_html(str(e)[:200]))
     elif cmd == "/stop-indodax":
         if chat_id in PENDING_CONFIRMATION and PENDING_CONFIRMATION[chat_id] == "stop":
             send_telegram(prefix + "Bot stopping...")

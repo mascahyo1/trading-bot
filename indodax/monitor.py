@@ -211,7 +211,7 @@ def run_analysis():
         f"Today: {metrics.get('today_trades', 0)} trades, {metrics.get('today_pnl', 0):+,.0f} IDR\n"
         f"\n"
         f"<b>ANALYSIS</b>\n"
-        f"{llm_analysis}\n"
+        f"{llm_analysis.replace('<', '&lt;').replace('>', '&gt;')}\n"
         f"\n"
         f"<b>ERRORS (24h):</b> {len(logs_summary['errors'])}"
     )
