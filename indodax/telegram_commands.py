@@ -152,11 +152,11 @@ def get_why_idle_text():
         win_rate = len(wins) / total_trades * 100 if total_trades > 0 else 0
         
         if total_trades >= 5 and win_rate < 40:
-            reasons.append(f"❌ Win rate {win_rate:.0f}% < 40% (blocking new buys)")
+            reasons.append(f"BLOCKED: Win rate {win_rate:.0f}% < 40%")
         elif win_rate >= 40:
-            reasons.append(f"✅ Win rate {win_rate:.0f}% (good)")
+            reasons.append(f"OK: Win rate {win_rate:.0f}%")
         else:
-            reasons.append(f"⚠️ Win rate {win_rate:.0f}% (need 5+ trades)")
+            reasons.append(f"Win rate {win_rate:.0f}% (need 5+ trades)")
         
         open_count = 0
         try:
@@ -174,37 +174,41 @@ def get_why_idle_text():
             balance = 0
         
         if open_count >= MAX_OPEN_POSITIONS:
-            reasons.append(f"❌ Max positions ({open_count}/{MAX_OPEN_POSITIONS})")
+            reasons.append(f"BLOCKED: Max positions ({open_count}/{MAX_OPEN_POSITIONS})")
         else:
-            reasons.append(f"✅ Positions available ({open_count}/{MAX_OPEN_POSITIONS})")
+            reasons.append(f"OK: Positions available ({open_count}/{MAX_OPEN_POSITIONS})")
         
         min_order = MIN_ORDER_IDR * 1.5
         if balance < min_order:
-            reasons.append(f"❌ Balance {balance:,.0f} < {min_order:,.0f} IDR")
+            reasons.append(f"BLOCKED: Balance {balance:,.0f} < {min_order:,.0f} IDR")
         else:
-            reasons.append(f"✅ Balance {balance:,.0f} IDR (sufficient)")
+            reasons.append(f"OK: Balance {balance:,.0f} IDR")
         
         today = now_jakarta().strftime("%Y-%m-%d")
         today_trades = [t for t in trades if t.get("exit_time", "").startswith(today)]
         today_pnl = sum(t.get("pnl_amount", 0) for t in today_trades)
-        reasons.append(f"📊 Today: {len(today_trades)} trades, {today_pnl:+,.0f} IDR")
+        reasons.append(f"Today: {len(today_trades)} trades, {today_pnl:+,.0f} IDR")
         
-        lines = ["🤖 <b>WHY BOT IS IDLE</b>", "", "<b>FACTORS:</b>"]
+        lines = [
+            "<b>WHY BOT IS IDLE</b>",
+            "",
+            "<b>FACTORS:</b>",
+        ]
         lines.extend(reasons)
         
-        if any("❌" in r for r in reasons):
+        if any("BLOCKED" in r for r in reasons):
             lines.append("")
-            lines.append("<b>🎯 ACTION:</b>")
+            lines.append("<b>ACTION:</b>")
             if win_rate < 40 and total_trades >= 5:
                 lines.append("- Wait for win rate > 40%")
-                lines.append("- Close positions at profit to boost win rate")
+                lines.append("- Close positions at profit")
             if open_count >= MAX_OPEN_POSITIONS:
                 lines.append("- Wait for TP/SL to hit")
             if balance < min_order:
-                lines.append("- Deposit more IDR or wait for profitable closes")
+                lines.append("- Deposit more IDR")
         else:
             lines.append("")
-            lines.append("<b>🎯 BOT SHOULD BE ACTIVE</b>")
+            lines.append("Bot should be active!")
         
         return "\n".join(lines)
     except Exception as e:
