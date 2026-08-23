@@ -14,7 +14,7 @@
  * @module captcha-solver
  */
 
-const TWO_CAPTCHA_API_KEY = process.env.TWO_CAPTCHA_API_KEY || process.env.TWO_CAPTCHA_API_KEY || '';
+const TWO_CAPTCHA_API_KEY = process.env.TWO_CAPTCHA_API_KEY || process.env.CAPTCHA_API_KEY || '';
 
 let Solver = null;
 try {

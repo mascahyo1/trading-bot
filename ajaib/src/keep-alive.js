@@ -43,7 +43,7 @@ const path = require('path');
 const captchaSolver = require('./captcha-solver');
 
 /** API key untuk 2Captcha - solve Cloudflare challenge */
-const TWO_CAPTCHA_API_KEY = process.env.TWO_CAPTCHA_API_KEY || process.env.TWO_CAPTCHA_API_KEY || '';
+const TWO_CAPTCHA_API_KEY = process.env.TWO_CAPTCHA_API_KEY || process.env.CAPTCHA_API_KEY || '';
 
 /** Direktori penyimpanan session browser (storage-state.json). */
 const SESSION_DIR = path.join(__dirname, '..', 'session');
