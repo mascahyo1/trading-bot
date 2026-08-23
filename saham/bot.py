@@ -18,7 +18,6 @@ from analyzer import MarketAnalyzer
 from strategy import RiskManager, TradingStrategy
 from notifier import setup_logger, TradeNotifier
 from telegram_notifier import TelegramNotifier
-from telegram_commands import TelegramCommandHandler
 from ajaib_trader import AjaibTrader
 
 try:

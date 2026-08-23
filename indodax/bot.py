@@ -17,7 +17,7 @@ from analyzer import MarketAnalyzer
 from strategy import RiskManager, TradingStrategy
 from notifier import setup_logger, TradeNotifier
 from telegram_notifier import TelegramNotifier
-from telegram_commands import TelegramCommandHandler
+from telegram_handler import TelegramCommandHandler
 
 try:
     import msvcrt
