@@ -258,26 +258,35 @@ async function main() {
         return;
     }
 
-    const browser = await chromium.launch({ headless: true });
-    const context = await browser.newContext({ storageState: SESSION_FILE });
-    const page = await context.newPage();
+    // Retry logic: Cloudflare kadang block, coba sampai 3x dengan delay
+    let success = false;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+        if (attempt > 1) {
+            log(`Retry attempt ${attempt}/3 after 30s...`);
+            await new Promise(r => setTimeout(r, 30000));
+        }
+        const browser = await chromium.launch({ headless: true });
+        const context = await browser.newContext({ storageState: SESSION_FILE });
+        const page = await context.newPage();
 
-    try {
-        await page.goto('https://invest.ajaib.co.id/home', {
-            waitUntil: 'networkidle',
-            timeout: 30000,
-        });
+        try {
+            await page.goto('https://invest.ajaib.co.id/home', {
+                waitUntil: 'networkidle',
+                timeout: 30000,
+            });
 
-        const url = page.url();
-        const title = await page.title();
-        // Cloudflare challenge: URL tetap /home tapi title berubah
-        if (url.includes('login') || title.includes('Cloudflare') || title.includes('Attention Required')) {
-            log('SESSION EXPIRED or Cloudflare challenge');
-            await sendTelegram('<b>AJAIB BOT</b>\nSession expired / Cloudflare challenge! Run: npm run login');
-        } else {
-            log('Session OK');
-            // Refresh cookies supaya session tetap panjang umurnya
-            await context.storageState({ path: SESSION_FILE });
+            const url = page.url();
+            const title = await page.title();
+            // Cloudflare challenge: URL tetap /home tapi title berubah
+            if (url.includes('login') || title.includes('Cloudflare') || title.includes('Attention Required')) {
+                log(`Cloudflare challenge (attempt ${attempt})`);
+                if (attempt >= 3) {
+                    await sendTelegram('<b>AJAIB BOT</b>\nCloudflare blocked! Run: npm run login');
+                }
+            } else {
+                log('Session OK');
+                // Refresh cookies supaya session tetap panjang umurnya
+                await context.storageState({ path: SESSION_FILE });
 
             // Scrape dan format laporan portfolio lengkap
             const portfolio = await getPortfolio(page);
@@ -325,13 +334,20 @@ async function main() {
             };
             fs.writeFileSync(PORTFOLIO_FILE, JSON.stringify(portfolioData, null, 2));
             log(`Portfolio saved: cash=${portfolio.cash}, stocks=${portfolio.stocks.length}`);
+            success = true;
+            break;  // keluar dari loop retry karena sukses
         }
     } catch (e) {
+        lastError = e.message;
         log(`Error: ${e.message}`);
-        await sendTelegram(`<b>AJAIB BOT</b>\nError: ${e.message.substring(0, 200)}`);
     } finally {
         await browser.close();
     }
+  }  // end for loop
+
+  if (!success && lastError) {
+    await sendTelegram(`<b>AJAIB BOT</b>\nError: ${lastError.substring(0, 200)}`);
+  }
 }
 
 // Handler fatal error terakhir - exit code 1 agar cron tahu ada kegagalan
