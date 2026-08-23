@@ -166,24 +166,24 @@ async function main() {
 
             let totalStockValue = 0;
             if (portfolio.stocks.length > 0) {
-                lines.append('<b>📈 PER SAHAM:</b>');
-                lines.append('');
+                lines.push('<b>📈 PER SAHAM:</b>');
+                lines.push('');
                 for (const stock of portfolio.stocks) {
                     const value = stock.lots * 100 * stock.price;
                     totalStockValue += value;
-                    lines.append(`<b>${stock.code}</b>`);
-                    lines.append(`   Lot: ${stock.lots} (${stock.lots * 100} lembar)`);
-                    lines.append(`   Harga: ${stock.price.toLocaleString('id-ID')} IDR`);
-                    lines.append(`   <b>Total: ${value.toLocaleString('id-ID')} IDR</b>`);
-                    lines.append('');
+                    lines.push(`<b>${stock.code}</b>`);
+                    lines.push(`   Lot: ${stock.lots} (${stock.lots * 100} lembar)`);
+                    lines.push(`   Harga: ${stock.price.toLocaleString('id-ID')} IDR`);
+                    lines.push(`   <b>Total: ${value.toLocaleString('id-ID')} IDR</b>`);
+                    lines.push('');
                 }
             }
 
             const grandTotal = portfolio.cash + totalStockValue;
-            lines.append(`<b>💵 Total Saham: ${totalStockValue.toLocaleString('id-ID')} IDR</b>`);
-            lines.append(`<b>💰 Cash: ${portfolio.cash.toLocaleString('id-ID')} IDR</b>`);
-            lines.append('');
-            lines.append(`<b>🏦 GRAND TOTAL: ${grandTotal.toLocaleString('id-ID')} IDR</b>`);
+            lines.push(`<b>💵 Total Saham: ${totalStockValue.toLocaleString('id-ID')} IDR</b>`);
+            lines.push(`<b>💰 Cash: ${portfolio.cash.toLocaleString('id-ID')} IDR</b>`);
+            lines.push('');
+            lines.push(`<b>🏦 GRAND TOTAL: ${grandTotal.toLocaleString('id-ID')} IDR</b>`);
 
             await sendTelegram('\n'.join(lines));
         }
