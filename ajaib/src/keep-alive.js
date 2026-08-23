@@ -42,6 +42,8 @@ const SESSION_DIR = path.join(__dirname, '..', 'session');
 const SESSION_FILE = path.join(SESSION_DIR, 'storage-state.json');
 /** Direktori file log harian. */
 const LOG_DIR = path.join(__dirname, '..', 'logs');
+/** Path file JSON untuk menyimpan hasil scrape portfolio (dibaca Python). */
+const PORTFOLIO_FILE = path.join(SESSION_DIR, 'portfolio.json');
 
 /**
  * Token bot Telegram dari environment variable.
@@ -310,6 +312,17 @@ async function main() {
             lines.push(`<b>🏦 GRAND TOTAL: ${grandTotal.toLocaleString('id-ID')} IDR</b>`);
 
             await sendTelegram(lines.join('\n'));
+
+            // Simpan hasil scrape ke file JSON untuk dibaca Python telegram_handler
+            const portfolioData = {
+                timestamp: new Date().toISOString(),
+                cash: portfolio.cash,
+                stocks: portfolio.stocks,
+                totalStockValue,
+                grandTotal,
+            };
+            fs.writeFileSync(PORTFOLIO_FILE, JSON.stringify(portfolioData, null, 2));
+            log(`Portfolio saved: cash=${portfolio.cash}, stocks=${portfolio.stocks.length}`);
         }
     } catch (e) {
         log(`Error: ${e.message}`);

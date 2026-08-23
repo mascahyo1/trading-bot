@@ -427,16 +427,56 @@ def get_saham_status():
 def get_saham_portfolio():
     """
     Mengambil dan memformat rincian kepemilikan saham IDX (lot, lembar, harga pasar, total nilai) serta kas.
-    
+
+    Data diutamakan berasal dari portfolio.json yang ditulis oleh Node.js keep-alive.js
+    (lebih reliable karena Node.js tidak di-block Cloudflare).
+    Fallback ke saham_state.json jika portfolio.json tidak tersedia.
+
     Returns:
         str: Pesan terformat HTML portofolio saham lengkap dan grand total nilai aset.
     """
+    # Prioritas: baca dari portfolio.json (Node.js keep-alive)
+    portfolio_json = os.path.join(SAHAM_SCRIPT_DIR, "..", "ajaib", "session", "portfolio.json")
+    try:
+        if os.path.exists(portfolio_json):
+            with open(portfolio_json, "r") as f:
+                data = json.load(f)
+            cash = data.get("cash", 0)
+            stocks = data.get("stocks", [])
+            total_stock_value = data.get("totalStockValue", 0)
+            grand_total = data.get("grandTotal", cash + total_stock_value)
+            timestamp = data.get("timestamp", "")
+            lines = [
+                "<b>SAHAM PORTFOLIO</b>",
+                f"⏰ {timestamp[:19].replace('T', ' ') if timestamp else ''}",
+                "",
+                f"<b>CASH: {cash:,.0f} IDR</b>",
+                "",
+            ]
+            if stocks:
+                lines.append("<b>PER SAHAM:</b>")
+                lines.append("")
+                for s in stocks:
+                    code = s.get("code", "?")
+                    lots = s.get("lots", 0)
+                    price = s.get("price", 0)
+                    value = lots * 100 * price
+                    lines.append(f"<b>{code}</b>")
+                    lines.append(f"   Lot: {lots} ({lots * 100} lembar)")
+                    lines.append(f"   Harga: {price:,.0f} IDR")
+                    lines.append(f"   <b>Total: {value:,.0f} IDR</b>")
+                    lines.append("")
+            lines.append(f"<b>Total Saham: {total_stock_value:,.0f} IDR</b>")
+            lines.append(f"<b>Cash: {cash:,.0f} IDR</b>")
+            lines.append(f"<b>GRAND TOTAL: {grand_total:,.0f} IDR</b>")
+            return "\n".join(lines)
+    except Exception as e:
+        logger.warning(f"Read portfolio.json failed: {e}")
+
+    # Fallback: baca dari saham_state.json
     state = read_saham_state()
     if not state:
         return "<b>SAHAM</b>\nBot tidak jalan atau state belum tersedia."
-    portfolio = state.get("portfolio", {})
-    cash = portfolio.get("cash", 0)
-    stocks = portfolio.get("stocks", [])
     lines = [
         "<b>SAHAM PORTFOLIO</b>",
         "",
