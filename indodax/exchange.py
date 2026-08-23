@@ -6,12 +6,34 @@ import logging
 import urllib.request
 import urllib.parse
 import urllib.error
+import socket
 import ccxt
 from config import INDODAX_API_KEY, INDODAX_API_SECRET
 
 logger = logging.getLogger(__name__)
 
 BASE_URL = "https://api.indodax.com"
+MAX_RETRIES = 3
+
+
+def api_retry(func):
+    def wrapper(*args, **kwargs):
+        for attempt in range(MAX_RETRIES):
+            try:
+                return func(*args, **kwargs)
+            except (urllib.error.URLError, socket.timeout, TimeoutError, ConnectionError) as e:
+                wait = (2 ** attempt) * 2
+                if attempt < MAX_RETRIES - 1:
+                    logger.warning(f"API retry {attempt + 1}/{MAX_RETRIES} after {wait}s: {str(e)[:60]}")
+                    time.sleep(wait)
+                else:
+                    logger.error(f"API failed after {MAX_RETRIES} retries: {str(e)[:60]}")
+                    return {"error": True, "message": str(e)}
+            except Exception as e:
+                logger.error(f"API error: {str(e)[:60]}")
+                return {"error": True, "message": str(e)}
+        return {"error": True, "message": "max_retries_exceeded"}
+    return wrapper
 
 
 class IndodaxExchange:
@@ -31,6 +53,7 @@ class IndodaxExchange:
             hashlib.sha256
         ).hexdigest()
 
+    @api_retry
     def _v2_request(self, method, endpoint, params=None):
         url = BASE_URL + endpoint
         headers = {
@@ -64,16 +87,8 @@ class IndodaxExchange:
             data = None
 
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
-        try:
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                return json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            body = e.read().decode("utf-8", errors="replace")
-            logger.error(f"API v2 HTTP {e.code}: {body[:300]}")
-            return {"error": True, "code": e.code, "message": body}
-        except Exception as e:
-            logger.error(f"API v2 error: {e}")
-            return {"error": True, "message": str(e)}
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            return json.loads(resp.read().decode("utf-8"))
 
     def server_time(self):
         req = urllib.request.Request(

@@ -1,10 +1,38 @@
 import json
 import logging
+import time
 import urllib.request
 import urllib.error
+import socket
 from config import LLM_BASE_URL, LLM_API_KEY, LLM_MODEL
 
 logger = logging.getLogger(__name__)
+
+MAX_RETRIES = 3
+BASE_TIMEOUT = 15
+
+
+def retry_with_backoff(func):
+    def wrapper(*args, **kwargs):
+        for attempt in range(MAX_RETRIES):
+            try:
+                return func(*args, **kwargs)
+            except (urllib.error.URLError, socket.timeout, TimeoutError, ConnectionError) as e:
+                wait = (2 ** attempt) * 2
+                if attempt < MAX_RETRIES - 1:
+                    logger.warning(f"Retry {attempt + 1}/{MAX_RETRIES} after {wait}s: {str(e)[:80]}")
+                    time.sleep(wait)
+                else:
+                    logger.error(f"Failed after {MAX_RETRIES} retries: {str(e)[:80]}")
+                    return None
+            except urllib.error.HTTPError as e:
+                logger.error(f"LLM API HTTP {e.code}: {str(e)[:80]}")
+                return None
+            except Exception as e:
+                logger.error(f"Unexpected error: {str(e)[:80]}")
+                return None
+        return None
+    return wrapper
 
 
 class LLMClient:
@@ -14,6 +42,7 @@ class LLMClient:
         self.model = LLM_MODEL
         self.enabled = bool(self.base_url and self.api_key)
 
+    @retry_with_backoff
     def _call_api(self, messages, temperature=0.3, max_tokens=500):
         if not self.enabled:
             return None
@@ -34,20 +63,12 @@ class LLMClient:
         data = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(url, data=data, headers=headers, method="POST")
 
-        try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                result = json.loads(resp.read().decode("utf-8"))
-                message = result["choices"][0]["message"]
-                content = message.get("content", "").strip()
-                reasoning = message.get("reasoning_content", "")
-                return self._parse_response(content, reasoning)
-        except urllib.error.HTTPError as e:
-            body = e.read().decode("utf-8", errors="replace")
-            logger.error(f"LLM API HTTP {e.code}: {body[:200]}")
-            return None
-        except Exception as e:
-            logger.error(f"LLM API error: {e}")
-            return None
+        with urllib.request.urlopen(req, timeout=BASE_TIMEOUT) as resp:
+            result = json.loads(resp.read().decode("utf-8"))
+            message = result["choices"][0]["message"]
+            content = message.get("content", "").strip()
+            reasoning = message.get("reasoning_content", "")
+            return self._parse_response(content, reasoning)
 
     def _parse_response(self, content, reasoning=""):
         try:
