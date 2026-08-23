@@ -61,6 +61,9 @@ from config import (
     now_jakarta,
 )
 
+# User-Agent yang sama dengan browser lokal - bypass Cloudflare
+USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36'
+
 
 class AjaibTrader:
     """
@@ -101,18 +104,22 @@ class AjaibTrader:
 
     async def _init_browser(self):
         """
-        Launch Chromium headless baru dengan stealth mode untuk hindari deteksi bot.
+        Launch Chromium headless baru dengan stealth mode & User-Agent custom
+        untuk bypass Cloudflare bot detection.
 
-        Menggunakan playwright-stealth untuk memodifikasi fingerprint browser
-        agar terlihat seperti user biasa (bukan headless bot) oleh Cloudflare/CDN.
+        User-Agent di-match persis dengan browser lokal user agar Cloudflare
+        tidak mendeteksi sebagai headless/automated browser.
 
         Returns:
             Browser: Instance Chromium headless yang siap dipakai.
         """
         from playwright.async_api import async_playwright
         self._playwright = await async_playwright().start()
-        # Gunakan Firefox karena Cloudflare lebih sering block Chromium headless
-        self._browser = await self._playwright.firefox.launch(headless=True)
+        self._browser = await self._playwright.chromium.launch(
+            headless=True,
+            # User-Agent sama dengan browser lokal untuk hindari deteksi bot
+            args=['--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36']
+        )
         return self._browser
 
     async def _apply_stealth(self, page):
@@ -184,7 +191,11 @@ class AjaibTrader:
 
         browser = await self._init_browser()
         try:
-            context = await browser.new_context(storage_state=self.session_file)
+            context = await browser.new_context(
+                storage_state=self.session_file,
+                userAgent=USER_AGENT,
+                viewport={'width': 1920, 'height': 1080},
+            )
             if not await self._ensure_logged_in(context):
                 logger.error("Session expired")
                 return None
@@ -329,7 +340,11 @@ class AjaibTrader:
         code = STOCK_CODE_MAP.get(stock_code, stock_code.replace(".JK", ""))
         browser = await self._init_browser()
         try:
-            context = await browser.new_context(storage_state=self.session_file)
+            context = await browser.new_context(
+                storage_state=self.session_file,
+                userAgent=USER_AGENT,
+                viewport={'width': 1920, 'height': 1080},
+            )
             if not await self._ensure_logged_in(context):
                 return {"success": False, "error": "Session expired"}
 
@@ -392,7 +407,11 @@ class AjaibTrader:
         code = STOCK_CODE_MAP.get(stock_code, stock_code.replace(".JK", ""))
         browser = await self._init_browser()
         try:
-            context = await browser.new_context(storage_state=self.session_file)
+            context = await browser.new_context(
+                storage_state=self.session_file,
+                userAgent=USER_AGENT,
+                viewport={'width': 1920, 'height': 1080},
+            )
             if not await self._ensure_logged_in(context):
                 return {"success": False, "error": "Session expired"}
 

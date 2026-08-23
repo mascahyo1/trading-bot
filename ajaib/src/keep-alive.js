@@ -42,8 +42,8 @@ const fs = require('fs');
 const path = require('path');
 const captchaSolver = require('./captcha-solver');
 
-/** API key untuk 2Captcha - solve Cloudflare challenge */
-const TWO_CAPTCHA_API_KEY = process.env.TWO_CAPTCHA_API_KEY || process.env.CAPTCHA_API_KEY || '';
+// User-Agent yang sama dengan browser lokal - bypass Cloudflare
+const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36';
 
 /** Direktori penyimpanan session browser (storage-state.json). */
 const SESSION_DIR = path.join(__dirname, '..', 'session');
@@ -284,7 +284,12 @@ async function main() {
             await new Promise(r => setTimeout(r, 30000));
         }
         const browser = await chromium.launch({ headless: true });
-        const context = await browser.newContext({ storageState: SESSION_FILE });
+        const context = await browser.newContext({
+            storageState: SESSION_FILE,
+            userAgent: USER_AGENT,
+            viewport: { width: 1920, height: 1080 },
+            locale: 'en-US',
+        });
         const page = await context.newPage();
 
         try {

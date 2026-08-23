@@ -1,0 +1,10 @@
+const fs = require('fs');
+const data = JSON.parse(fs.readFileSync('session/storage-state.json', 'utf8'));
+const cookies = data.cookies || [];
+console.log('Cookies count:', cookies.length);
+const cfCookies = cookies.filter(c => c.domain.includes('ajaib') || c.domain.includes('cloudflare'));
+console.log('Ajaib/Cloudflare cookies:');
+cfCookies.forEach(c => console.log('  ', c.name, '=', c.value.substring(0, 30), 'domain:', c.domain));
+const cookieStr = cfCookies.map(c => c.name + '=' + c.value).join('; ');
+fs.writeFileSync('session/cookies.txt', cookieStr);
+console.log('\nCookie string saved to session/cookies.txt');
