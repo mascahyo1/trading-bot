@@ -1,11 +1,12 @@
 # Ajaib Trading Bot
 
-Automated trading bot for Ajaib using Playwright.
+Automated trading bot for Ajaib stock trading using Playwright.
 
 ## Setup
 
 1. Install dependencies:
 ```bash
+cd ajaib
 npm install
 ```
 
@@ -14,7 +15,7 @@ npm install
 npx playwright install chromium
 ```
 
-3. Login manually (saves session):
+3. Login manually (saves session for VPS):
 ```bash
 npm run login
 ```
@@ -30,16 +31,19 @@ npm start
 ajaib/
 ├── src/
 │   ├── login.js     # Manual login, saves session
-│   └── index.js     # Main bot (coming soon)
+│   └── index.js     # Main bot (load session, scrape, trade)
 ├── session/         # Saved login session (gitignored)
-├── logs/            # Bot logs (gitignored)
+├── logs/            # Daily logs (gitignored)
 ├── .env             # Configuration (gitignored)
 ├── .env.example     # Config template
-└── package.json
+├── .gitignore
+├── package.json
+└── README.md
 ```
 
 ## Notes
 
 - Session is saved after login, no need to login again
-- Use `headless: false` for local debugging
-- Use `headless: true` on VPS/server
+- Use `HEADLESS=false` for local debugging
+- Use `HEADLESS=true` on VPS/server
+- Session expires after some days, re-run `npm run login` when needed
