@@ -48,7 +48,7 @@ def send_telegram(text, reply_markup=None):
     try:
         urllib.request.urlopen(req, timeout=10)
     except Exception as e:
-        logger.error(f"Telegram send error: {e}")
+        logger.error(f"Telegram send error: {e} | Message: {text[:100]}")
 
 def get_updates(offset=None):
     if not TELEGRAM_TOKEN:
@@ -366,7 +366,10 @@ class TelegramCommandHandler:
                         if chat_id and TELEGRAM_CHAT_ID and str(chat_id) == TELEGRAM_CHAT_ID:
                             text = msg.get("text", "")
                             if text:
+                                logger.info(f"Received command: {text}")
                                 handle_command(text, chat_id)
+                        else:
+                            logger.warning(f"Chat ID mismatch: {chat_id} vs {TELEGRAM_CHAT_ID}")
                     elif "callback_query" in update:
                         cb = update["callback_query"]
                         chat_id = cb.get("message", {}).get("chat", {}).get("id")
