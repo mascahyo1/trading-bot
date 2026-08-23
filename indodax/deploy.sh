@@ -1,6 +1,13 @@
 #!/bin/bash
-# Deploy script untuk VPS Ubuntu/Debian
-# Jalankan: bash deploy.sh
+# ==============================================================================
+# Script Otomatis Deployment VPS Ubuntu / Debian untuk Bot Crypto Indodax
+# ==============================================================================
+# Menyiapkan lingkungan runtime Python 3, virtualenv, dependensi pip,
+# validasi konfigurasi .env, dan registrasi systemd service auto-start.
+#
+# Penggunaan:
+#   bash deploy.sh
+# ==============================================================================
 
 set -e
 
@@ -8,15 +15,15 @@ echo "=========================================="
 echo "  AI Trading Bot - Indodax VPS Deployment"
 echo "=========================================="
 
-# Update system
+# 1. Update paket sistem operasi
 echo "[1/6] Updating system..."
 sudo apt update && sudo apt upgrade -y
 
-# Install dependencies
+# 2. Instalasi runtime Python, pip, virtualenv, git, screen
 echo "[2/6] Installing Python and tools..."
 sudo apt install -y python3 python3-pip python3-venv git screen
 
-# Clone repo
+# 3. Clone atau pull repository terbaru dari GitHub
 echo "[3/6] Cloning repository..."
 if [ -d "trading" ]; then
     cd trading/indodax
@@ -26,7 +33,7 @@ else
     cd trading/indodax
 fi
 
-# Setup virtual environment (shared venv in parent)
+# 4. Inisialisasi Python Virtual Environment (venv bersama) dan install requirements
 echo "[4/6] Setting up Python environment..."
 if [ ! -d "../venv" ]; then
     python3 -m venv ../venv
@@ -35,7 +42,7 @@ source ../venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
 
-# Check .env
+# 5. Pengecekan file konfigurasi lingkungan (.env)
 echo "[5/6] Checking configuration..."
 if [ ! -f "../.env" ] && [ ! -f ".env" ]; then
     echo "WARNING: .env not found!"
@@ -46,7 +53,7 @@ if [ ! -f "../.env" ] && [ ! -f ".env" ]; then
     read -p "Press Enter after you've configured .env..."
 fi
 
-# Setup systemd service for auto-start
+# 6. Registrasi dan aktifkan service systemd untuk background daemon auto-restart
 echo "[6/6] Setting up systemd service..."
 sudo cp trading-bot.service /etc/systemd/system/
 sudo systemctl daemon-reload
@@ -57,13 +64,14 @@ echo "=========================================="
 echo "  Deployment Complete!"
 echo "=========================================="
 echo ""
-echo "Commands:"
+echo "Perintah Manajemen Service:"
 echo "  Start:   sudo systemctl start trading-bot"
 echo "  Stop:    sudo systemctl stop trading-bot"
 echo "  Status:  sudo systemctl status trading-bot"
 echo "  Logs:    journalctl -u trading-bot -f"
 echo ""
-echo "Or run manually:"
+echo "Atau jalankan secara manual:"
 echo "  source ../venv/bin/activate"
 echo "  python bot.py"
 echo ""
+

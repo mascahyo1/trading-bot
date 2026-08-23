@@ -1,9 +1,21 @@
+"""
+Script Pengujian Pembuatan Format Teks Respon Telegram Bot
+
+Menguji keluaran teks HTML dari fungsi:
+- `get_why_idle_text()`
+- `get_status_text()`
+- `get_analytics_text()`
+
+Author: AI Trading Bot
+"""
+
 import sys
 import os
 import json
 
-sys.path.insert(0, "/home/cahyo/trading-bot/indodax")
-os.chdir("/home/cahyo/trading-bot/indodax")
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, SCRIPT_DIR)
+os.chdir(SCRIPT_DIR)
 
 from telegram_commands import get_why_idle_text, get_status_text, get_portfolio_text, get_analytics_text
 
@@ -23,3 +35,4 @@ print("=== ANALYTICS ===")
 result = get_analytics_text()
 print(result)
 print(f"Length: {len(result)}")
+

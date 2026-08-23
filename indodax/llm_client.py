@@ -1,3 +1,18 @@
+"""
+Client Integrasi AI / Large Language Model (LLM) untuk Analisis Pasar Crypto
+
+Menghubungkan bot dengan model kecerdasan buatan (seperti LongCat-2.0 / OpenAI API compatible)
+untuk mengevaluasi sentimen momentum teknikal, mengonfirmasi multi-indikator, dan memberikan
+alasan (reasoning) rasional sebelum keputusan trading dieksekusi.
+
+Fitur:
+- Exponential backoff automatic retry untuk mengantisipasi network glitch / rate limiting.
+- Structured JSON output parsing (Signal, Confidence, Reasoning, Risk Level).
+- Fallback keyword extraction jika model merespons dalam format teks bebas.
+
+Author: AI Trading Bot
+"""
+
 import json
 import logging
 import time
@@ -13,7 +28,31 @@ BASE_TIMEOUT = 15
 
 
 def retry_with_backoff(func):
+    """
+    Decorator untuk mengulang pemanggilan API LLM jika terjadi kegagalan jaringan atau timeout.
+    
+    Strategi Retry:
+    - Percobaan maksimal: 3x.
+    - Waktu tunggu bertahap (Exponential backoff): 2s, 4s, 8s.
+    
+    Args:
+        func (callable): Fungsi yang akan dibungkus.
+        
+    Returns:
+        callable: Wrapper function dengan logika retry.
+    """
     def wrapper(*args, **kwargs):
+        """
+        Inner function yang menjalankan retry logic untuk LLM API call.
+
+        Strategy:
+        - Network errors (URLError, timeout, ConnectionError): exponential backoff retry
+        - HTTPError: langsung return None (tidak retry, biasanya 4xx/5xx permanent)
+        - Exception lain: langsung return None
+
+        Returns:
+            str | None: Response text dari LLM, atau None jika semua retry gagal.
+        """
         for attempt in range(MAX_RETRIES):
             try:
                 return func(*args, **kwargs)
@@ -36,7 +75,20 @@ def retry_with_backoff(func):
 
 
 class LLMClient:
+    """
+    Klien HTTP untuk komunikasi dengan endpoint AI Chat Completions (OpenAI Compatible).
+    
+    Attributes:
+        base_url (str): URL dasar API LLM.
+        api_key (str): Kunci otentikasi API.
+        model (str): Nama model LLM yang ditargetkan (misal 'LongCat-2.0').
+        enabled (bool): Status apakah kredensial LLM terisi dan siap digunakan.
+    """
+
     def __init__(self):
+        """
+        Inisialisasi LLMClient dengan kredensial dari file konfigurasi.
+        """
         self.base_url = LLM_BASE_URL.rstrip("/")
         self.api_key = LLM_API_KEY
         self.model = LLM_MODEL
@@ -44,6 +96,17 @@ class LLMClient:
 
     @retry_with_backoff
     def _call_api(self, messages, temperature=0.3, max_tokens=500):
+        """
+        Mengirim payload chat messages ke endpoint `/chat/completions`.
+        
+        Args:
+            messages (list): Daftar dictionary pesan [{'role': 'system'/'user', 'content': '...'}].
+            temperature (float, optional): Tingkat kreativitas model (rendah 0.3 untuk keputusan konsisten).
+            max_tokens (int, optional): Batas panjang output token. Default 500.
+            
+        Returns:
+            dict or None: Hasil parsing respons terstruktur atau None jika API non-aktif/gagal.
+        """
         if not self.enabled:
             return None
 
@@ -71,6 +134,22 @@ class LLMClient:
             return self._parse_response(content, reasoning)
 
     def _parse_response(self, content, reasoning=""):
+        """
+        Mem-parse respons mentah dari LLM menjadi dictionary standar berskema.
+        
+        Skema output:
+        - signal: 'buy', 'sell', atau 'hold'
+        - confidence: 0.0 - 1.0
+        - reasoning: Penjelasan singkat alasan keputusan
+        - risk_level: 'low', 'medium', atau 'high'
+        
+        Args:
+            content (str): Teks respons utama dari LLM.
+            reasoning (str, optional): Teks reasoning khusus jika model mendukung CoT.
+            
+        Returns:
+            dict: Objek terstruktur keputusan AI.
+        """
         try:
             return json.loads(content)
         except json.JSONDecodeError:
@@ -102,6 +181,17 @@ class LLMClient:
         }
 
     def analyze_market(self, symbol, indicators, current_price):
+        """
+        Mengirimkan ringkasan data teknikal ke LLM untuk mendapatkan analisis sentimen pasar.
+        
+        Args:
+            symbol (str): Simbol pair (misal 'BTC/IDR').
+            indicators (dict): Nilai indikator RSI, MACD, ATR, EMA, Volume.
+            current_price (float): Harga koin saat ini.
+            
+        Returns:
+            dict or None: Evaluasi sinyal trading dari LLM.
+        """
         if not self.enabled:
             return None
 
@@ -154,3 +244,4 @@ What is your trading decision?"""
                 f"Risk: {result.get('risk_level', 'N/A')}"
             )
         return result
+

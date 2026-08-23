@@ -1,7 +1,17 @@
+"""
+Script Pengujian Akhir Pengiriman Pesan Diagnostik (/why_idle) ke Telegram
+
+Memformat laporan diagnostik bot Indodax dan mengirimkannya langsung ke chat Telegram terkonfigurasi.
+
+Author: AI Trading Bot
+"""
+
 import sys
 import os
-sys.path.insert(0, "/home/cahyo/trading-bot/indodax")
-os.chdir("/home/cahyo/trading-bot/indodax")
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, SCRIPT_DIR)
+os.chdir(SCRIPT_DIR)
 
 from telegram_commands import get_why_idle_text, send_telegram, escape_html
 
@@ -20,3 +30,4 @@ print()
 # Actually send it
 send_telegram(msg)
 print("Sent!")
+

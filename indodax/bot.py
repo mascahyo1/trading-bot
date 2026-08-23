@@ -1,3 +1,17 @@
+"""
+Production Crypto Trading Bot untuk Indodax
+
+Modul utama yang mengorkestrasi seluruh alur trading otomatis:
+1. Scanning seluruh pair koin di Indodax setiap 5 menit (300 detik).
+2. Analisis teknikal & AI LLM scoring pada kandidat koin dengan probabilitas tertinggi.
+3. Evaluasi manajemen risiko & eksekusi order (Market Buy, Partial TP1, Full TP2, Trailing Stop, DCA).
+4. Pemantauan portofolio dan notifikasi real-time via Telegram & logger lokal.
+5. Menjalankan listener Telegram command di background thread.
+6. Penanganan graceful shutdown saat menerima sinyal SIGINT/SIGTERM atau tombol 'q'.
+
+Author: AI Trading Bot
+"""
+
 import time
 import logging
 import signal
@@ -29,7 +43,29 @@ except ImportError:
 
 
 class ProductionBot:
+    """
+    Bot Trading Kripto Indodax Mode Produksi (Production Engine).
+    
+    Attributes:
+        logger (logging.Logger): Logger instance untuk bot.
+        exchange (IndodaxExchange): Wrapper API exchange Indodax.
+        analyzer (MarketAnalyzer): Engine analisis teknikal & AI LLM.
+        risk_manager (RiskManager): Pengelola batas risiko dan pelacak posisi terbuka.
+        strategy (TradingStrategy): Evaluator strategi trading dan aturan eksekusi.
+        notifier (TradeNotifier): Pengirim notifikasi console/file log.
+        telegram (TelegramNotifier): Pengirim pesan notifikasi ke Telegram.
+        telegram_cmd (TelegramCommandHandler): Threaded poller untuk menerima perintah Telegram.
+        running (bool): Status apakah bot sedang berjalan.
+        cycle_count (int): Penghitung iterasi siklus pemindaian pasar.
+        start_time (datetime): Waktu mulai bot berjalan.
+        daily_pnl (float): PnL terealisasi hari ini.
+        trades_today (int): Jumlah trade yang diselesaikan hari ini.
+    """
+
     def __init__(self):
+        """
+        Inisialisasi komponen bot produksi Indodax.
+        """
         self.logger = logging.getLogger("bot")
         self.exchange = IndodaxExchange()
         self.analyzer = MarketAnalyzer(use_llm=True)
@@ -46,9 +82,26 @@ class ProductionBot:
         self.telegram_cmd = TelegramCommandHandler(bot_instance=self)
 
     def get_balance(self):
+        """
+        Mengambil saldo IDR bebas yang siap dipakai bertransaksi.
+        
+        Returns:
+            float: Saldo Rupiah tersedia.
+        """
         return self.exchange.get_idr_balance()
 
     def execute_buy(self, symbol, amount, current_price):
+        """
+        Mengeksekusi order Market Buy di Indodax dan mencatat posisi baru ke RiskManager.
+        
+        Args:
+            symbol (str): Simbol pair (misal 'BTC/IDR').
+            amount (float): Jumlah koin yang dibeli.
+            current_price (float): Harga koin saat order dibuat.
+            
+        Returns:
+            bool: True jika order berhasil dikirim dan dieksekusi, False jika gagal.
+        """
         pair = INDODAX_SYMBOL_MAP.get(symbol, symbol.replace("/", ""))
         quote_qty = int(amount * current_price)
         order = self.exchange.create_order(
@@ -70,6 +123,16 @@ class ProductionBot:
         return False
 
     def execute_sell(self, symbol, current_price):
+        """
+        Mengeksekusi order Market Sell penuh untuk menutup seluruh posisi koin terbuka.
+        
+        Args:
+            symbol (str): Simbol pair (misal 'BTC/IDR').
+            current_price (float): Harga pasar saat ini.
+            
+        Returns:
+            bool: True jika eksekusi jual berhasil, False jika gagal.
+        """
         if symbol in self.risk_manager.positions:
             pos = self.risk_manager.positions[symbol]
             pair = INDODAX_SYMBOL_MAP.get(symbol, symbol.replace("/", ""))
@@ -98,6 +161,17 @@ class ProductionBot:
         return False
 
     def execute_sell_partial(self, symbol, current_price, amount):
+        """
+        Mengeksekusi order Market Sell sebagian (misal 50% kuantitas pada TP1).
+        
+        Args:
+            symbol (str): Simbol pair.
+            current_price (float): Harga pasar saat ini.
+            amount (float): Kuantitas koin yang dilepas.
+            
+        Returns:
+            bool: True jika order parsial berhasil, False jika gagal.
+        """
         pair = INDODAX_SYMBOL_MAP.get(symbol, symbol.replace("/", ""))
         order = self.exchange.create_order(
             symbol=pair,
@@ -116,6 +190,12 @@ class ProductionBot:
         return False
 
     def scan_all_pairs(self):
+        """
+        Memindai seluruh pasangan koin di ALL_PAIRS dan menghitung indikator teknikal awal (Fast Scan).
+        
+        Returns:
+            list: Daftar hasil analisis teknikal dari seluruh pair yang berhasil dipindai.
+        """
         results = []
         for symbol in ALL_PAIRS:
             try:
@@ -139,11 +219,30 @@ class ProductionBot:
         return results
 
     def get_top_candidates(self, results, signal_type="buy"):
+        """
+        Menyaring dan memilih koin dengan skor confidence tertinggi sesuai tipe sinyal.
+        
+        Args:
+            results (list): Hasil pemindaian awal seluruh pair.
+            signal_type (str, optional): Tipe sinyal yang dicari ('buy' atau 'sell'). Default 'buy'.
+            
+        Returns:
+            list: Maksimal LLM_TOP_PAIRS kandidat terbaik untuk dianalisis lebih lanjut dengan AI LLM.
+        """
         filtered = [r for r in results if r["signal"] == signal_type and r["confidence"] > 0.55]
         filtered.sort(key=lambda x: x["confidence"], reverse=True)
         return filtered[:LLM_TOP_PAIRS]
 
     def analyze_with_llm(self, candidates):
+        """
+        Melakukan deep analysis dengan AI LLM untuk daftar kandidat koin terpilih.
+        
+        Args:
+            candidates (list): Daftar koin hasil seleksi teknikal awal.
+            
+        Returns:
+            list: Daftar hasil analisis lengkap yang sudah digabung dengan scoring LLM.
+        """
         analyzed = []
         for c in candidates:
             try:
@@ -164,6 +263,14 @@ class ProductionBot:
         return analyzed
 
     def process_pair(self, symbol, ohlcv=None, is_primary=True):
+        """
+        Memproses satu pair koin: evaluasi strategi, kirim notifikasi sinyal, dan eksekusi order jika valid.
+        
+        Args:
+            symbol (str): Simbol pair koin.
+            ohlcv (list, optional): Data candlestick jika sudah di-cache sebelumnya.
+            is_primary (bool, optional): Apakah koin termasuk pair prioritas utama.
+        """
         try:
             if ohlcv is None:
                 ohlcv = self.exchange.fetch_ohlcv(
@@ -223,10 +330,27 @@ class ProductionBot:
             self.telegram.notify_error(f"[{symbol}] {str(e)}")
 
     def health_check(self):
+        """
+        Pemeriksaan kesehatan sistem bot (ketersediaan saldo dan konektivitas API).
+        
+        Returns:
+            dict: Status kesehatan akun (saldo IDR, dll).
+        """
         balance = self.get_balance()
         return {"balance": balance}
 
     def run_cycle(self):
+        """
+        Menjalankan satu putaran siklus trading lengkap:
+        1. Reset metrik harian jika masuk hari baru (pukul 00:00 WIB).
+        2. Health check saldo dan logging status siklus.
+        3. Sinkronisasi posisi terbuka dengan exchange.
+        4. Pemindaian seluruh pair (Fast Scan) dan pemeringkatan top kandidat.
+        5. Deep analysis LLM untuk kandidat terbaik.
+        6. Eksekusi keputusan trading per koin terpilih.
+        7. Pengecekan rebalancing jika kas IDR menipis.
+        8. Notifikasi ringkasan status portofolio.
+        """
         self.cycle_count += 1
         now = now_jakarta()
 
@@ -289,6 +413,9 @@ class ProductionBot:
         self.logger.info("-" * 65)
 
     def _keyboard_listener(self):
+        """
+        Background listener thread untuk membaca penekanan tombol keyboard 'q' untuk graceful stop.
+        """
         print("\n[BOT RUNNING] Press 'q' + Enter to stop safely\n")
         while self.running:
             try:
@@ -313,6 +440,9 @@ class ProductionBot:
                 time.sleep(0.5)
 
     def start(self):
+        """
+        Memulai eksekusi bot trading (lifecycle main runner loop).
+        """
         self.running = True
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGTERM, self._signal_handler)
@@ -353,16 +483,25 @@ class ProductionBot:
         self._shutdown()
 
     def _signal_handler(self, signum, frame):
+        """
+        Menangkap sinyal OS termination (SIGINT / SIGTERM) untuk graceful shutdown.
+        """
         self.logger.info(f"Signal {signum} received")
         self.running = False
 
     def stop(self):
+        """
+        Menghentikan bot secara terprogram (misal via Telegram command /stop-indodax).
+        """
         self.running = False
         self.logger.info("Bot stopping via Telegram...")
         self._shutdown()
         os._exit(0)
 
     def _shutdown(self):
+        """
+        Melakukan prosedur pembersihan dan pelaporan akhir saat bot dimatikan.
+        """
         self.logger.info("=" * 65)
         self.logger.info("BOT STOPPED")
         self.logger.info(f"Total cycles: {self.cycle_count}")
@@ -382,6 +521,9 @@ class ProductionBot:
 
 
 def main():
+    """
+    Fungsi entri utama program bot Indodax.
+    """
     setup_logger()
     bot = ProductionBot()
     bot.start()
@@ -389,3 +531,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

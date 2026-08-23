@@ -1,8 +1,19 @@
 #!/usr/bin/env python3
 """
-Unified Telegram Command Handler
-Single listener for BOTH Indodax (crypto) and Saham (stock) bots.
-No duplicate responses - each command maps to exactly one handler.
+Unified Telegram Command Handler untuk Indodax Crypto & Saham IHSG
+
+Modul ini bertindak sebagai satu-satunya listener polling Telegram terpusat (single listener)
+untuk bot Indodax (crypto) dan Saham (Ajaib/IHSG), sehingga tidak terjadi konflik (HTTP 409)
+atau respons ganda ke pengguna Telegram.
+
+Fitur Utama:
+- Long polling Telegram bot API dengan offset auto-increment.
+- Handler terpisah dan unik untuk setiap perintah crypto (/status-indodax, dll.) dan saham (/status-saham, dll.).
+- Interaktivitas tombol inline keyboard untuk konfirmasi tindakan sensitif (Start/Stop bot).
+- Format respons berbasis HTML untuk tampilan Telegram yang rapi dan informatif.
+- Pengecekan keamanan berdasarkan TELEGRAM_CHAT_ID terdaftar.
+
+Author: AI Trading Bot
 """
 import json
 import os
@@ -15,19 +26,28 @@ import threading
 
 logger = logging.getLogger(__name__)
 
+# Kredensial Telegram (diisi otomatis oleh load_env)
 TELEGRAM_TOKEN = ""
 TELEGRAM_CHAT_ID = ""
-BOT_INSTANCE = None
+BOT_INSTANCE = None  # Menyimpan instance aktif dari ProductionBot (Indodax)
 
+# Jalur file state dan history untuk bot saham dan indodax
 SAHAM_STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "saham", "saham_state.json")
 SAHAM_HISTORY_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "saham", "trade_history.json")
 INODAX_SCRIPT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "indodax")
 SAHAM_SCRIPT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "saham")
 
+# State penampung konfirmasi aksi sensitif (e.g. {"chat_id": "stop" / "start"})
 PENDING_CONFIRMATION = {}
 
 
 def load_env():
+    """
+    Memuat variabel lingkungan (Telegram_Bot_Token dan Telegram_Chat_ID) dari file `.env`.
+    
+    Mencari file `.env` di folder lokal dan folder parent untuk memastikan
+    variabel selalu termuat baik saat dijalankan langsung maupun sebagai modul.
+    """
     global TELEGRAM_TOKEN, TELEGRAM_CHAT_ID
     for env_path in [
         os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"),
@@ -47,13 +67,34 @@ def load_env():
 
 
 def escape_html(text):
+    """
+    Melakukan sanitasi karakter khusus HTML agar aman dikirim ke Telegram parse_mode='HTML'.
+    
+    Args:
+        text (str): Teks mentah yang akan disanitasi.
+        
+    Returns:
+        str: Teks dengan karakter &, <, dan > yang sudah di-escape.
+    """
+    text = str(text)
     text = text.replace("&", "&amp;")
     text = text.replace("<", "&lt;")
     text = text.replace(">", "&gt;")
     return text
 
 
-def send_telegram(text, parse_mode="HTML"):
+def send_telegram(text, parse_mode="HTML", reply_markup=None):
+    """
+    Mengirim pesan teks ke Telegram menggunakan HTTP POST ke Telegram Bot API.
+    
+    Args:
+        text (str): Isi pesan yang akan dikirim (format HTML secara default).
+        parse_mode (str, optional): Mode parser pesan ('HTML' atau 'Markdown'). Default 'HTML'.
+        reply_markup (str/dict, optional): Inline keyboard JSON string atau dict jika ada.
+        
+    Returns:
+        None
+    """
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
         return
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -63,6 +104,14 @@ def send_telegram(text, parse_mode="HTML"):
         "parse_mode": parse_mode,
         "disable_web_page_preview": True,
     }
+    if reply_markup:
+        if isinstance(reply_markup, dict):
+            payload["reply_markup"] = reply_markup
+        elif isinstance(reply_markup, str):
+            try:
+                payload["reply_markup"] = json.loads(reply_markup)
+            except Exception:
+                payload["reply_markup"] = reply_markup
     data = json.dumps(payload).encode()
     req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"}, method="POST")
     try:
@@ -72,10 +121,19 @@ def send_telegram(text, parse_mode="HTML"):
 
 
 def get_updates(offset=None):
+    """
+    Mengambil daftar update terbaru dari Telegram Bot API menggunakan teknik long polling.
+    
+    Args:
+        offset (int, optional): Identifier update terkecil berikutnya yang akan diambil.
+        
+    Returns:
+        list: Daftar objek update Telegram, atau list kosong jika error/tidak ada pesan.
+    """
     if not TELEGRAM_TOKEN:
         return []
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates"
-    params = {"timeout": 30, "allowed_updates": ["message"]}
+    params = {"timeout": 30, "allowed_updates": ["message", "callback_query"]}
     if offset:
         params["offset"] = offset
     query = "&".join(f"{k}={v}" for k, v in params.items())
@@ -86,6 +144,7 @@ def get_updates(offset=None):
             return data.get("result", [])
     except urllib.error.HTTPError as e:
         if e.code == 409:
+            # Terjadi konflik karena ada instance bot lain yang sedang polling
             clear_pending_updates()
             return []
         logger.error(f"getUpdates HTTP {e.code}: {e.reason}")
@@ -96,6 +155,10 @@ def get_updates(offset=None):
 
 
 def clear_pending_updates():
+    """
+    Menghapus antrean update lama yang tertumpuk di Telegram server dengan offset=-1.
+    Berguna saat me-restart bot untuk mencegah respons ke tumpukan pesan lama.
+    """
     if not TELEGRAM_TOKEN:
         return
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates"
@@ -110,6 +173,12 @@ def clear_pending_updates():
 
 
 def read_saham_state():
+    """
+    Membaca dan mem-parse file state JSON bot saham (`saham_state.json`).
+    
+    Returns:
+        dict or None: Data state portofolio & analytics saham, atau None jika file tidak ditemukan/error.
+    """
     try:
         if not os.path.exists(SAHAM_STATE_FILE):
             return None
@@ -120,6 +189,17 @@ def read_saham_state():
 
 
 def get_indodax_status():
+    """
+    Membuat laporan ringkasan status operasional bot Indodax.
+    
+    Menampilkan:
+    - Saldo IDR saat ini di akun Indodax.
+    - Jumlah open positions yang sedang berjalan.
+    - Total PnL dan Win Rate historis.
+    
+    Returns:
+        str: Pesan terformat HTML siap kirim ke Telegram.
+    """
     try:
         sys.path.insert(0, INODAX_SCRIPT_DIR)
         from exchange import IndodaxExchange
@@ -147,6 +227,12 @@ def get_indodax_status():
 
 
 def get_indodax_portfolio():
+    """
+    Mengambil dan memformat ringkasan portofolio aset crypto di Indodax.
+    
+    Returns:
+        str: Pesan terformat HTML berisi daftar koin yang dimiliki, jumlah, dan nilai estimasi.
+    """
     try:
         sys.path.insert(0, INODAX_SCRIPT_DIR)
         from portfolio import format_portfolio_report
@@ -156,6 +242,12 @@ def get_indodax_portfolio():
 
 
 def get_indodax_trades():
+    """
+    Mengambil 5 riwayat transaksi terakhir bot Indodax dari file `trade_history.json`.
+    
+    Returns:
+        str: Pesan terformat HTML berisi daftar trade terakhir, harga exit, dan PnL.
+    """
     try:
         sys.path.insert(0, INODAX_SCRIPT_DIR)
         from config import now_jakarta
@@ -180,6 +272,18 @@ def get_indodax_trades():
 
 
 def get_indodax_analytics():
+    """
+    Menghitung dan memformat statistik kinerja trading crypto Indodax.
+    
+    Metrik yang dihitung:
+    - Total transaksi, Win Rate, jumlah menang/kalah.
+    - PnL harian dan total PnL kumulatif.
+    - Rata-rata Profit (Avg Win), Rata-rata Loss (Avg Loss), serta Rasio Risk/Reward.
+    - Performa trade terbaik (Best) dan terburuk (Worst).
+    
+    Returns:
+        str: Pesan terformat HTML analitik trading Indodax.
+    """
     try:
         sys.path.insert(0, INODAX_SCRIPT_DIR)
         from config import now_jakarta
@@ -230,6 +334,17 @@ def get_indodax_analytics():
 
 
 def get_indodax_why_idle():
+    """
+    Menganalisis dan menjelaskan alasan mengapa bot Indodax saat ini sedang idle (tidak membuka posisi baru).
+    
+    Faktor yang dievaluasi:
+    - Apakah win rate di bawah batas minimum proteksi (< 40%).
+    - Apakah kuota open position sudah penuh (maksimal MAX_OPEN_POSITIONS).
+    - Apakah saldo IDR mencukupi batas minimum order (MIN_ORDER_IDR).
+    
+    Returns:
+        str: Pesan terformat HTML berisi diagnosis status bot dan saran tindakan perbaikan.
+    """
     try:
         sys.path.insert(0, INODAX_SCRIPT_DIR)
         from config import now_jakarta, MAX_OPEN_POSITIONS, MIN_ORDER_IDR
@@ -286,6 +401,12 @@ def get_indodax_why_idle():
 
 
 def get_saham_status():
+    """
+    Mengambil status ringkasan portofolio dan analytics bot Saham IDX.
+    
+    Returns:
+        str: Pesan terformat HTML status saldo kas, open positions, Net PnL, dan biaya fee.
+    """
     state = read_saham_state()
     if not state:
         return "<b>SAHAM</b>\nBot tidak jalan atau state belum tersedia."
@@ -302,6 +423,12 @@ def get_saham_status():
 
 
 def get_saham_portfolio():
+    """
+    Mengambil dan memformat rincian kepemilikan saham IDX (lot, lembar, harga pasar, total nilai) serta kas.
+    
+    Returns:
+        str: Pesan terformat HTML portofolio saham lengkap dan grand total nilai aset.
+    """
     state = read_saham_state()
     if not state:
         return "<b>SAHAM</b>\nBot tidak jalan atau state belum tersedia."
@@ -336,6 +463,12 @@ def get_saham_portfolio():
 
 
 def get_saham_trades():
+    """
+    Mengambil 5 transaksi saham terakhir dari `saham/trade_history.json`.
+    
+    Returns:
+        str: Pesan terformat HTML daftar transaksi saham dengan indikator emoji profit/loss.
+    """
     try:
         if not os.path.exists(SAHAM_HISTORY_FILE):
             return "No trades yet"
@@ -358,6 +491,14 @@ def get_saham_trades():
 
 
 def get_saham_analytics():
+    """
+    Menghitung dan memformat statistik kinerja trading saham IDX.
+    
+    Termasuk rincian fee transaksi, Gross PnL vs Net PnL, Win Rate, dan perbandingan Best/Worst trade.
+    
+    Returns:
+        str: Pesan terformat HTML analitik trading saham.
+    """
     try:
         if not os.path.exists(SAHAM_HISTORY_FILE):
             return "No trade data yet"
@@ -408,6 +549,17 @@ def get_saham_analytics():
 
 
 def get_saham_why_idle():
+    """
+    Menganalisis dan menjelaskan alasan mengapa bot Saham IDX tidak membuka posisi baru saat ini.
+    
+    Evaluasi mencakup:
+    - Status jam bursa BEI (hanya buka Senin-Jumat jam sesi tertentu).
+    - Batas maksimum slot saham terbuka (max 5 saham).
+    - Ketersediaan saldo kas untuk minimal order 1 lot.
+    
+    Returns:
+        str: Pesan terformat HTML status kesiapan trading saham.
+    """
     state = read_saham_state()
     if not state:
         return "<b>SAHAM</b>\nBot tidak jalan atau state belum tersedia."
@@ -451,6 +603,17 @@ def get_saham_why_idle():
 
 
 def get_saham_fees():
+    """
+    Menampilkan rincian struktur biaya transaksi (fee) saham BEI serta akumulasi fee historis.
+    
+    Rincian:
+    - Biaya Beli: 0.14% (Broker: 0.10%, KPEI Clearing: 0.02%, BEI: 0.02%)
+    - Biaya Jual: 0.34% (Broker: 0.10%, Clearing: 0.02%, BEI: 0.02%, PPN: 0.10%, PPh Final: 0.10%)
+    - Round-trip total: 0.48%
+    
+    Returns:
+        str: Pesan terformat HTML rincian fee transaksi saham.
+    """
     try:
         total_fees = 0
         total_buy_fees = 0
@@ -616,6 +779,16 @@ def handle_command(text, chat_id):
 
 
 def handle_callback(data, chat_id):
+    """
+    Menangani callback query yang dipicu oleh penekanan tombol inline keyboard di Telegram.
+    
+    Args:
+        data (str): Data payload callback dari tombol Telegram ('confirm_stop', 'confirm_start', 'cancel').
+        chat_id (str): Chat ID pengirim untuk verifikasi dan pembersihan sesi konfirmasi.
+        
+    Returns:
+        None
+    """
     if data == "confirm_stop":
         send_telegram("<b>INDODAX</b>\nBot stopping...")
         if BOT_INSTANCE:
@@ -632,7 +805,25 @@ def handle_callback(data, chat_id):
 
 
 class TelegramCommandHandler:
+    """
+    Threaded Polling Manager untuk Telegram Bot commands.
+    
+    Menjalankan background daemon thread yang secara periodik memanggil `get_updates` (long polling)
+    dan mengarahkan setiap pesan atau callback ke handler yang tepat tanpa memblokir bot engine utama.
+    
+    Attributes:
+        running (bool): Flag status operasional background thread.
+        offset (int or None): Pointer update ID berikutnya untuk Telegram long polling.
+        thread (threading.Thread or None): Objek thread background yang menjalankan loop polling.
+    """
+
     def __init__(self, bot_instance=None):
+        """
+        Inisialisasi TelegramCommandHandler.
+        
+        Args:
+            bot_instance (ProductionBot, optional): Instance bot utama untuk kontrol start/stop dan info posisi.
+        """
         global BOT_INSTANCE
         load_env()
         BOT_INSTANCE = bot_instance
@@ -641,17 +832,26 @@ class TelegramCommandHandler:
         self.thread = None
 
     def start(self):
+        """
+        Memulai thread background polling Telegram jika belum berjalan.
+        """
         self.running = True
         self.thread = threading.Thread(target=self._poll_loop, daemon=True)
         self.thread.start()
         logger.info("Telegram command handler started")
 
     def stop(self):
+        """
+        Menghentikan thread background polling dan menunggu thread selesai (join timeout 5s).
+        """
         self.running = False
         if self.thread:
             self.thread.join(timeout=5)
 
     def _poll_loop(self):
+        """
+        Loop internal yang berjalan di background thread untuk mengambil updates dan mengeksekusi command.
+        """
         while self.running:
             try:
                 updates = get_updates(self.offset)
@@ -660,6 +860,7 @@ class TelegramCommandHandler:
                     if "message" in update:
                         msg = update["message"]
                         chat_id = msg.get("chat", {}).get("id")
+                        # Pastikan pesan hanya diproses jika berasal dari Chat ID yang terdaftar
                         if chat_id and TELEGRAM_CHAT_ID and str(chat_id) == TELEGRAM_CHAT_ID:
                             text = msg.get("text", "")
                             if text:
@@ -674,3 +875,4 @@ class TelegramCommandHandler:
             except Exception as e:
                 logger.error(f"Poll error: {e}")
                 time.sleep(5)
+

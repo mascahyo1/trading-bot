@@ -77,6 +77,16 @@ class MarketAnalyzer:
         return df
 
     def calc_rsi(self, series, period=14):
+        """
+        Menghitung Relative Strength Index (RSI) menggunakan metode Wilder/Standard SMA.
+        
+        Args:
+            series (pd.Series): Deret data harga penutupan (close prices).
+            period (int, optional): Periode observasi (default 14).
+            
+        Returns:
+            pd.Series: Deret nilai RSI dalam rentang 0 hingga 100.
+        """
         delta = series.diff()
         gain = delta.where(delta > 0, 0.0)
         loss = -delta.where(delta < 0, 0.0)
@@ -87,6 +97,18 @@ class MarketAnalyzer:
         return rsi
 
     def calc_macd(self, series, fast=12, slow=26, signal=9):
+        """
+        Menghitung Moving Average Convergence Divergence (MACD), Signal Line, dan Histogram.
+        
+        Args:
+            series (pd.Series): Deret data harga penutupan.
+            fast (int, optional): Periode EMA cepat (default 12).
+            slow (int, optional): Periode EMA lambat (default 26).
+            signal (int, optional): Periode EMA garis sinyal (default 9).
+            
+        Returns:
+            tuple[pd.Series, pd.Series, pd.Series]: (macd_line, signal_line, histogram)
+        """
         ema_fast = series.ewm(span=fast, adjust=False).mean()
         ema_slow = series.ewm(span=slow, adjust=False).mean()
         macd_line = ema_fast - ema_slow
@@ -95,9 +117,30 @@ class MarketAnalyzer:
         return macd_line, signal_line, histogram
 
     def calc_ema(self, series, period):
+        """
+        Menghitung Exponential Moving Average (EMA).
+        
+        Args:
+            series (pd.Series): Deret data harga penutupan.
+            period (int): Periode rentang EMA (misal 9, 21, 50).
+            
+        Returns:
+            pd.Series: Deret nilai EMA.
+        """
         return series.ewm(span=period, adjust=False).mean()
 
     def calc_bollinger(self, series, period=20, std_dev=2):
+        """
+        Menghitung batas atas (Upper Band), garis tengah (SMA), dan batas bawah (Lower Band) Bollinger Bands.
+        
+        Args:
+            series (pd.Series): Deret data harga penutupan.
+            period (int, optional): Periode Simple Moving Average (default 20).
+            std_dev (int or float, optional): Jumlah standar deviasi penggali (default 2).
+            
+        Returns:
+            tuple[pd.Series, pd.Series, pd.Series]: (upper_band, middle_sma, lower_band)
+        """
         sma = series.rolling(window=period).mean()
         std = series.rolling(window=period).std()
         upper = sma + (std * std_dev)
@@ -105,6 +148,16 @@ class MarketAnalyzer:
         return upper, sma, lower
 
     def calc_atr(self, df, period=14):
+        """
+        Menghitung Average True Range (ATR) untuk mengukur tingkat volatilitas pergerakan harga pasar.
+        
+        Args:
+            df (pd.DataFrame): DataFrame berisi kolom 'high', 'low', dan 'close'.
+            period (int, optional): Periode perataan True Range (default 14).
+            
+        Returns:
+            pd.Series: Deret nilai ATR.
+        """
         high_low = df["high"] - df["low"]
         high_close = (df["high"] - df["close"].shift()).abs()
         low_close = (df["low"] - df["close"].shift()).abs()
@@ -113,6 +166,21 @@ class MarketAnalyzer:
         return atr
 
     def analyze_rsi(self, rsi_series):
+        """
+        Mengevaluasi sinyal trading berdasarkan level overbought / oversold RSI.
+        
+        Aturan:
+        - RSI < 30: Oversold kuat (Sinyal BUY berbobot tinggi)
+        - RSI > 70: Overbought kuat (Sinyal SELL berbobot tinggi)
+        - RSI 30-45: Cenderung Bullish (BUY lemah)
+        - RSI 55-70: Cenderung Bearish (SELL lemah)
+        
+        Args:
+            rsi_series (pd.Series): Deret nilai RSI historis.
+            
+        Returns:
+            tuple[str, float]: (signal: 'buy'/'sell'/'hold', score: 0.0 - 1.0)
+        """
         current = rsi_series.iloc[-1]
         if current < 30:
             return "buy", (30 - current) / 30
@@ -125,6 +193,17 @@ class MarketAnalyzer:
         return "hold", 0.0
 
     def analyze_macd(self, macd_line, signal_line, histogram):
+        """
+        Mengevaluasi sinyal tren momentum berdasarkan perpotongan MACD line dan histogram crossover.
+        
+        Args:
+            macd_line (pd.Series): Garis MACD.
+            signal_line (pd.Series): Garis Sinyal.
+            histogram (pd.Series): MACD Histogram.
+            
+        Returns:
+            tuple[str, float]: (signal: 'buy'/'sell'/'hold', score: 0.0 - 1.0)
+        """
         curr_macd = macd_line.iloc[-1]
         curr_signal = signal_line.iloc[-1]
         curr_hist = histogram.iloc[-1]
@@ -141,6 +220,15 @@ class MarketAnalyzer:
         return "hold", 0.0
 
     def analyze_ema(self, df):
+        """
+        Mengevaluasi tren harga multi-timeframe menggunakan EMA-9, EMA-21, dan EMA-50 (Golden/Death Cross).
+        
+        Args:
+            df (pd.DataFrame): DataFrame harga dengan kolom 'close'.
+            
+        Returns:
+            tuple[str, float]: (signal: 'buy'/'sell'/'hold', score: 0.0 - 1.5)
+        """
         ema_9 = self.calc_ema(df["close"], 9)
         ema_21 = self.calc_ema(df["close"], 21)
         ema_50 = self.calc_ema(df["close"], 50)
@@ -155,9 +243,11 @@ class MarketAnalyzer:
         score = 0.0
         signal = "hold"
 
+        # Deteksi Golden Cross (EMA 9 memotong ke atas EMA 21)
         if prev_9 <= prev_21 and curr_9 > curr_21:
             signal = "buy"
             score = 1.0
+        # Deteksi Death Cross (EMA 9 memotong ke bawah EMA 21)
         elif prev_9 >= prev_21 and curr_9 < curr_21:
             signal = "sell"
             score = 1.0
@@ -169,6 +259,7 @@ class MarketAnalyzer:
                 signal = "sell"
                 score = 0.5
 
+        # Konfirmasi trend jangka panjang (EMA 50 filter)
         if curr_price > curr_50:
             score += 0.2
         elif curr_price < curr_50:
@@ -177,16 +268,25 @@ class MarketAnalyzer:
         return signal, min(max(score, 0), 1.5)
 
     def analyze_bollinger(self, df):
+        """
+        Mengevaluasi batas ekstrem harga menggunakan batas atas dan bawah Bollinger Bands.
+        
+        Args:
+            df (pd.DataFrame): DataFrame harga dengan kolom 'close'.
+            
+        Returns:
+            tuple[str, float]: (signal: 'buy'/'sell'/'hold', score: 0.0 - 0.8)
+        """
         upper, sma, lower = self.calc_bollinger(df["close"])
         curr_price = df["close"].iloc[-1]
         curr_upper = upper.iloc[-1]
         curr_lower = lower.iloc[-1]
         curr_sma = sma.iloc[-1]
 
-        band_width = (curr_upper - curr_lower) / curr_sma
-
+        # Harga menyentuh / menembus lower band -> oversold bounce opportunity
         if curr_price <= curr_lower:
             return "buy", 0.8
+        # Harga menyentuh / menembus upper band -> overbought pullback risk
         elif curr_price >= curr_upper:
             return "sell", 0.8
         elif curr_price < curr_sma:
@@ -196,6 +296,15 @@ class MarketAnalyzer:
         return "hold", 0.0
 
     def analyze_volume(self, df):
+        """
+        Mengevaluasi volume transaksi saat ini dibandingkan rata-rata 20 periode sebelumnya (SMA-20 Volume).
+        
+        Args:
+            df (pd.DataFrame): DataFrame harga dengan kolom 'volume'.
+            
+        Returns:
+            tuple[str, float]: (volume_status: 'strong'/'above_avg'/'weak'/'normal', volume_score: 0.0 - 1.0)
+        """
         vol_sma = df["volume"].rolling(window=20).mean()
         curr_vol = df["volume"].iloc[-1]
         avg_vol = vol_sma.iloc[-1]
@@ -211,6 +320,17 @@ class MarketAnalyzer:
         return "normal", 0.0
 
     def analyze(self, ohlcv, symbol="UNKNOWN"):
+        """
+        Melakukan analisis pasar menyeluruh (Hybrid: Analisis Teknikal Multi-Indikator + AI LLM Sentiment).
+        
+        Args:
+            ohlcv (list): Daftar bar candlestick [timestamp, open, high, low, close, volume].
+            symbol (str, optional): Kode pasangan aset (misal 'BTC/IDR'). Default 'UNKNOWN'.
+            
+        Returns:
+            dict: Struktur hasil analisis berisi 'signal', 'confidence', 'buy_score', 'sell_score',
+                  'indicators', dan 'llm'.
+        """
         if not ohlcv or len(ohlcv) < 50:
             logger.warning("Insufficient data for analysis")
             return {"signal": "hold", "confidence": 0, "indicators": {}}
@@ -302,6 +422,21 @@ class MarketAnalyzer:
         return result
 
     def _combine_signals(self, result, llm_result):
+        """
+        Menggabungkan sinyal teknikal dengan penilaian AI LLM menggunakan model pembobotan (Hybrid Ensemble).
+        
+        Logika:
+        - Jika AI setuju dengan Teknikal (keduanya BUY atau keduanya SELL): Confidence ditingkatkan (+10% boost).
+        - Jika AI bertentangan dengan Teknikal: Confidence dipenalti dan jika selisih tipis di-downgrade menjadi 'HOLD'.
+        - Bobot kontribusi: 60% Analisis Teknikal, 40% Reasoning LLM.
+        
+        Args:
+            result (dict): Hasil analisis teknikal awal.
+            llm_result (dict): Respons terstruktur dari LLM (berisi 'signal', 'confidence', 'reasoning').
+            
+        Returns:
+            dict: Objek hasil analisis yang telah disesuaikan (final hybrid result).
+        """
         tech_signal = result["signal"]
         tech_conf = result["confidence"]
         llm_signal = llm_result.get("signal", "hold")
@@ -336,6 +471,16 @@ class MarketAnalyzer:
         return result
 
     def analyze_technical(self, ohlcv, symbol="UNKNOWN"):
+        """
+        Melakukan analisis teknikal murni multi-indikator tanpa melibatkan AI LLM (Fast Mode).
+        
+        Args:
+            ohlcv (list): Daftar bar candlestick [timestamp, open, high, low, close, volume].
+            symbol (str, optional): Kode pasangan aset. Default 'UNKNOWN'.
+            
+        Returns:
+            dict: Struktur hasil analisis teknikal murni.
+        """
         if not ohlcv or len(ohlcv) < 50:
             return {"signal": "hold", "confidence": 0, "indicators": {}, "symbol": symbol}
 

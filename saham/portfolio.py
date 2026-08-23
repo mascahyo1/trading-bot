@@ -1,3 +1,14 @@
+"""
+Manajemen Portofolio & Valuasi Aset Saham Indonesia (Ajaib & Yahoo Finance)
+
+Menyediakan fungsi untuk:
+1. Sinkronisasi saldo kas (Rdn) dan portofolio saham langsung dari akun Ajaib via browser automation.
+2. Menghitung rincian aset per saham (Lots, Lembar, Nilai Pasar Bruto & Netto, Biaya Jual).
+3. Memformat laporan portofolio terformat HTML untuk dashboard Telegram.
+
+Author: AI Trading Bot
+"""
+
 import os
 import sys
 import logging
@@ -10,7 +21,15 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 def get_portfolio_from_ajaib(trader):
-    """Get portfolio data from Ajaib via Playwright"""
+    """
+    Mengambil data mentah portofolio dari web app Ajaib via Playwright browser automation.
+    
+    Args:
+        trader (AjaibTrader): Instance automasi browser Ajaib.
+        
+    Returns:
+        dict or None: Data portofolio {'cash': float, 'stocks': list, ...} atau None jika gagal.
+    """
     try:
         portfolio = trader.get_portfolio()
         if not portfolio:
@@ -22,7 +41,12 @@ def get_portfolio_from_ajaib(trader):
 
 
 def format_portfolio_report():
-    """Format portfolio report from Ajaib"""
+    """
+    Menyusun laporan ringkas portofolio Ajaib (saldo kas dan daftar saham) dalam format teks HTML Telegram.
+    
+    Returns:
+        str: String pesan HTML laporan portofolio.
+    """
     try:
         sys.path.insert(0, SCRIPT_DIR)
         from ajaib_trader import AjaibTrader
@@ -53,7 +77,12 @@ def format_portfolio_report():
 
 
 def get_asset_breakdown():
-    """Get per-stock asset breakdown with grand total - sends via Telegram"""
+    """
+    Menghitung valuasi per saham secara detail menggunakan harga real-time Yahoo Finance dan menghitung Grand Total.
+    
+    Returns:
+        str: Pesan HTML laporan rincian aset per saham dan total kekayaan bersih.
+    """
     try:
         sys.path.insert(0, SCRIPT_DIR)
         from exchange import StockExchange
@@ -151,7 +180,17 @@ def get_asset_breakdown():
 
 
 def get_portfolio_summary(risk_manager, exchange, cash_balance):
-    """Get portfolio summary from internal tracking + live prices"""
+    """
+    Menghasilkan ringkasan portofolio internal gabungan dengan floating PnL bersih per posisi.
+    
+    Args:
+        risk_manager (RiskManager): Pengelola risiko dan posisi internal.
+        exchange (StockExchange): Wrapper data pasar Yahoo Finance.
+        cash_balance (float): Saldo kas IDR.
+        
+    Returns:
+        tuple: (report_text: str, grand_total: float, position_details: dict).
+    """
     try:
         position_details = risk_manager.get_position_details(exchange)
         total_stock_value = sum(d["value"] for d in position_details.values())
@@ -197,3 +236,4 @@ if __name__ == "__main__":
     import logging
     logging.basicConfig(level=logging.INFO)
     print(get_asset_breakdown())
+

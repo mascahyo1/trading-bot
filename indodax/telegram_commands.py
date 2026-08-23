@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
 """
-Telegram Bot Command Handler
-Listen for commands and respond. Sensitive actions require confirmation.
-Handles BOTH Indodax (crypto) and Saham (stock) commands.
+Telegram Bot Command Handler & Response Generator (Indodax & Saham)
+
+Modul pembantu untuk menyusun respons teks HTML perintah Telegram untuk bot Indodax dan Saham:
+- Ringkasan status bot, saldo, dan waktu operasional.
+- Evaluasi diagnostik mengapa bot tidak trading (`/why_idle`).
+- Laporan portofolio koin dan kalkulasi analitik (Win Rate, PnL, Avg Win/Loss, Best/Worst trades).
+
+Author: AI Trading Bot
 """
 import json
 import os
@@ -25,7 +30,11 @@ BOT_INSTANCE = None
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
+
 def load_env():
+    """
+    Memuat variabel lingkungan Telegram dari file `.env`.
+    """
     global TELEGRAM_TOKEN, TELEGRAM_CHAT_ID
     env_path = os.path.join(SCRIPT_DIR, ".env")
     if not os.path.exists(env_path):
@@ -40,14 +49,32 @@ def load_env():
                 elif k.strip() == "Telegram_Chat_ID":
                     TELEGRAM_CHAT_ID = v.strip()
 
+
 def escape_html(text):
-    """Escape HTML special characters for Telegram HTML parse mode"""
+    """
+    Sanitasi karakter khusus HTML untuk parse_mode HTML Telegram.
+    
+    Args:
+        text (str): Teks mentah.
+        
+    Returns:
+        str: Teks dengan karakter HTML yang di-escape.
+    """
+    text = str(text)
     text = text.replace("&", "&amp;")
     text = text.replace("<", "&lt;")
     text = text.replace(">", "&gt;")
     return text
 
+
 def send_telegram(text, reply_markup=None):
+    """
+    Mengirim pesan teks ke Telegram Bot API.
+    
+    Args:
+        text (str): Isi pesan HTML.
+        reply_markup (dict or str, optional): Inline keyboard payload jika ada.
+    """
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
         return
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -61,7 +88,17 @@ def send_telegram(text, reply_markup=None):
     except Exception as e:
         logger.error(f"Telegram send error: {e} | Message: {text[:100]}")
 
+
 def get_updates(offset=None):
+    """
+    Mengambil pesan baru dari Telegram menggunakan long polling.
+    
+    Args:
+        offset (int, optional): Update ID offset.
+        
+    Returns:
+        list: Daftar update Telegram.
+    """
     if not TELEGRAM_TOKEN:
         return []
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates"
@@ -85,7 +122,11 @@ def get_updates(offset=None):
         logger.error(f"getUpdates error: {e}")
         return []
 
+
 def clear_pending_updates():
+    """
+    Menghapus antrean update lama yang tertumpuk di Telegram server.
+    """
     if not TELEGRAM_TOKEN:
         return
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates"
@@ -98,7 +139,14 @@ def clear_pending_updates():
     except Exception:
         pass
 
+
 def get_portfolio_text():
+    """
+    Menyusun laporan portofolio koin dan total saldo IDR di akun Indodax.
+    
+    Returns:
+        str: Pesan HTML ringkasan portofolio.
+    """
     try:
         sys.path.insert(0, SCRIPT_DIR)
         from exchange import IndodaxExchange
@@ -127,7 +175,14 @@ def get_portfolio_text():
     except Exception as e:
         return f"Error: {e}"
 
+
 def get_status_text():
+    """
+    Menyusun ringkasan status operasional bot Indodax dan saldo kas IDR.
+    
+    Returns:
+        str: Pesan HTML status bot.
+    """
     try:
         sys.path.insert(0, SCRIPT_DIR)
         from exchange import IndodaxExchange

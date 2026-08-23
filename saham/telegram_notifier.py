@@ -1,3 +1,16 @@
+"""
+Notifier Telegram Khusus Bot Saham Indonesia (IDX / BEI)
+
+Mengirimkan berbagai format pesan notifikasi terstruktur ke Telegram:
+- Notifikasi eksekusi beli/jual dengan rincian biaya fee Ajaib (beli 0.14%, jual 0.34%).
+- Laporan rincian aset per emiten beserta estimasi break-even price dan net floating PnL.
+- Notifikasi pembukaan (09:00 WIB) & penutupan pasar saham Indonesia (16:00 WIB).
+- Ringkasan statistik performa trading saham (Win Rate, Total PnL Net, Total Fees).
+- Peringatan error dan event startup/shutdown bot.
+
+Author: AI Trading Bot
+"""
+
 import logging
 import json
 import urllib.request
@@ -11,7 +24,19 @@ TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
 
 
 class TelegramNotifier:
+    """
+    Klien pengirim notifikasi pesan HTML ke Telegram Bot API untuk trading saham.
+    
+    Attributes:
+        token (str): Token bot Telegram.
+        chat_id (str): Chat ID penerima notifikasi.
+        enabled (bool): Status apakah kredensial Telegram valid.
+    """
+
     def __init__(self):
+        """
+        Inisialisasi TelegramNotifier bot saham.
+        """
         self.token = TELEGRAM_TOKEN
         self.chat_id = TELEGRAM_CHAT_ID
         self.enabled = bool(self.token and self.chat_id)
@@ -21,6 +46,16 @@ class TelegramNotifier:
             logger.info("Telegram notifier DISABLED")
 
     def send(self, text, parse_mode="HTML"):
+        """
+        Mengirim pesan teks ke Telegram melalui endpoint sendMessage.
+        
+        Args:
+            text (str): Teks pesan HTML.
+            parse_mode (str, optional): Mode parse Telegram. Default 'HTML'.
+            
+        Returns:
+            bool: True jika berhasil, False jika gagal.
+        """
         if not self.enabled:
             return False
 
@@ -48,6 +83,17 @@ class TelegramNotifier:
             return False
 
     def notify_trade(self, symbol, side, price, lots=None, pnl=None, fees=None):
+        """
+        Mengirim notifikasi eksekusi order saham (BUY / SELL / DCA) beserta rincian biaya fee.
+        
+        Args:
+            symbol (str): Simbol saham.
+            side (str): Aksi transaksi.
+            price (float): Harga per lembar saham.
+            lots (int, optional): Jumlah lot saham.
+            pnl (float, optional): Net profit/loss jika order jual.
+            fees (float, optional): Total nominal biaya transaksi.
+        """
         from config import BUY_TOTAL_FEE_PCT, SELL_TOTAL_FEE_PCT
         code = symbol.replace(".JK", "")
         msg = (
@@ -74,6 +120,15 @@ class TelegramNotifier:
         self.send(msg)
 
     def notify_signal(self, symbol, signal, confidence, indicators):
+        """
+        Mengirim notifikasi deteksi sinyal indikator teknikal saham.
+        
+        Args:
+            symbol (str): Simbol saham.
+            signal (str): Arah sinyal.
+            confidence (float): Tingkat confidence (0.0 - 1.0).
+            indicators (dict): Data RSI, MACD, dll.
+        """
         code = symbol.replace(".JK", "")
         rsi = str(indicators.get('rsi', 'N/A')).replace('<', '&lt;').replace('>', '&gt;')
         macd = str(indicators.get('macd_histogram', 'N/A')).replace('<', '&lt;').replace('>', '&gt;')
@@ -85,6 +140,14 @@ class TelegramNotifier:
         self.send(msg)
 
     def notify_portfolio_detail(self, cash_balance, position_details, grand_total):
+        """
+        Mengirim laporan rincian lengkap seluruh aset saham (Lots, Nilai, Net PnL, Break-Even).
+        
+        Args:
+            cash_balance (float): Saldo kas IDR.
+            position_details (dict): Map data rincian setiap saham.
+            grand_total (float): Total nilai portofolio bruto.
+        """
         from config import BUY_TOTAL_FEE_PCT, SELL_TOTAL_FEE_PCT, ROUND_TRIP_FEE_PCT
 
         lines = [
@@ -163,6 +226,17 @@ class TelegramNotifier:
         self.send("\n".join(lines))
 
     def notify_summary(self, cash_balance, positions_count, total_pnl, win_rate, trades, total_fees=None):
+        """
+        Mengirim pesan ringkasan performa akun bot saham.
+        
+        Args:
+            cash_balance (float): Saldo kas IDR.
+            positions_count (int): Jumlah posisi aktif.
+            total_pnl (float): Net PnL kumulatif.
+            win_rate (float): Win rate persentase.
+            trades (int): Jumlah transaksi selesai.
+            total_fees (float, optional): Total biaya fee transaksi.
+        """
         sign = "+" if total_pnl >= 0 else ""
         msg = (
             f"<b>SAHAM SUMMARY</b>\n"
@@ -176,10 +250,22 @@ class TelegramNotifier:
         self.send(msg)
 
     def notify_error(self, message):
+        """
+        Mengirim pesan peringatan kesalahan/error ke Telegram.
+        
+        Args:
+            message (str): Isi pesan error.
+        """
         msg = f"<b>ERROR</b>\n{message}"
         self.send(msg)
 
     def notify_start(self, stocks):
+        """
+        Mengirim notifikasi saat bot saham mulai berjalan (startup event).
+        
+        Args:
+            stocks (list): Daftar ticker saham yang dipantau.
+        """
         from config import (
             BUY_BROKER_FEE_PCT, BUY_CLEARENCE_FEE_PCT, BUY_TAX_FEE_PCT, BUY_TOTAL_FEE_PCT,
             SELL_BROKER_FEE_PCT, SELL_CLEARENCE_FEE_PCT, SELL_TAX_FEE_PCT,
@@ -201,10 +287,22 @@ class TelegramNotifier:
         self.send(msg)
 
     def notify_stop(self, reason="User request"):
+        """
+        Mengirim notifikasi saat bot saham berhenti (shutdown event).
+        
+        Args:
+            reason (str, optional): Alasan stop.
+        """
         msg = f"<b>SAHAM BOT STOPPED</b>\nReason: {reason}"
         self.send(msg)
 
     def notify_market_open(self, is_open):
+        """
+        Mengirim pengumuman status jam bursa BEI / IDX (buka pukul 09:00 WIB, tutup pukul 16:00 WIB).
+        
+        Args:
+            is_open (bool): True jika pasar saham sedang buka.
+        """
         if is_open:
             self.send("🟢 <b>PASAR SAHAM BUKA</b>\nBot mulai monitoring...")
         else:
@@ -212,6 +310,12 @@ class TelegramNotifier:
 
 
 def test_telegram():
+    """
+    Fungsi uji coba untuk memverifikasi apakah notifikasi Telegram saham terkirim.
+    
+    Returns:
+        bool: True jika sukses, False jika gagal.
+    """
     tg = TelegramNotifier()
     if not tg.enabled:
         print("Telegram not configured!")
@@ -233,3 +337,4 @@ def test_telegram():
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     test_telegram()
+

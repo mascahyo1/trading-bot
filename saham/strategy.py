@@ -102,12 +102,33 @@ class Position:
         self.total_sell_proceeds = 0
 
     def get_dca1_price(self):
+        """
+        Menghitung harga pemicu DCA level 1 (-3% dari harga entry cost basis).
+        
+        Returns:
+            float: Harga pemicu DCA 1.
+        """
         return self.entry_price * (1 - self.dca1_pct)
 
     def get_dca2_price(self):
+        """
+        Menghitung harga pemicu DCA level 2 (-6% dari harga entry cost basis).
+        
+        Returns:
+            float: Harga pemicu DCA 2.
+        """
         return self.entry_price * (1 - self.dca2_pct)
 
     def should_dca(self, current_price):
+        """
+        Mengevaluasi apakah harga saat ini telah menyentuh batas averaging down (DCA).
+        
+        Args:
+            current_price (float): Harga saham di pasar saat ini.
+            
+        Returns:
+            bool: True jika memenuhi syarat DCA, False jika tidak.
+        """
         if self.dca_count >= 2:
             return False
         if self.dca_count == 0 and current_price <= self.get_dca1_price():
@@ -117,11 +138,26 @@ class Position:
         return False
 
     def dca_lots(self):
+        """
+        Menghitung alokasi jumlah lot untuk averaging down.
+        
+        Returns:
+            int: Jumlah lot DCA (50% dari lot awal pada DCA 1, 25% pada DCA 2).
+        """
         if self.dca_count == 0:
             return max(1, self.initial_lots // 2)
         return max(1, self.initial_lots // 4)
 
     def update_trailing_stop(self, current_price):
+        """
+        Memperbarui harga trailing stop jika harga pasar menembus rekor tertinggi baru (highest price).
+        
+        Args:
+            current_price (float): Harga saham saat ini.
+            
+        Returns:
+            bool: True jika stop loss berhasil dinaikkan, False jika tidak ada perubahan.
+        """
         if current_price > self.highest_price:
             self.highest_price = current_price
             new_stop = current_price * (1 - self.trailing_stop_pct)
@@ -131,36 +167,108 @@ class Position:
         return False
 
     def check_trailing_stop(self, current_price):
+        """
+        Mengecek apakah harga saat ini telah menembus ke bawah batas trailing stop.
+        
+        Args:
+            current_price (float): Harga saham saat ini.
+            
+        Returns:
+            bool: True jika trailing stop tertembus, False jika masih aman.
+        """
         return current_price <= self.stop_loss
 
     def get_tp1_price(self):
+        """
+        Menghitung harga target Take Profit tier 1 (+4% dari cost basis).
+        
+        Returns:
+            float: Harga target TP1.
+        """
         return self.entry_price * (1 + self.tp1_pct)
 
     def get_tp2_price(self):
+        """
+        Menghitung harga target Take Profit tier 2 (+8% dari cost basis).
+        
+        Returns:
+            float: Harga target TP2.
+        """
         return self.entry_price * (1 + self.tp2_pct)
 
     def should_partial_sell(self, current_price):
+        """
+        Mengecek apakah posisi memenuhi kriteria penjualan parsial pada TP1 (+4%).
+        
+        Args:
+            current_price (float): Harga pasar saat ini.
+            
+        Returns:
+            bool: True jika belum pernah partial sell dan harga >= TP1.
+        """
         if self.partial_sell_count == 0 and current_price >= self.get_tp1_price():
             return True
         return False
 
     def should_full_sell(self, current_price):
+        """
+        Mengecek apakah sisa posisi harus ditutup penuh pada TP2 (+8%).
+        
+        Args:
+            current_price (float): Harga pasar saat ini.
+            
+        Returns:
+            bool: True jika sudah pernah partial sell dan harga >= TP2.
+        """
         if self.partial_sell_count >= 1 and current_price >= self.get_tp2_price():
             return True
         return False
 
     def partial_sell_lots(self):
+        """
+        Menghitung jumlah lot yang dilepas saat partial sell (50% dari initial lots).
+        
+        Returns:
+            int: Jumlah lot yang dijual.
+        """
         return max(1, self.initial_lots // 2)
 
     def current_value(self, current_price):
+        """
+        Menghitung nilai pasar bruto posisi saham saat ini (Lots * 100 * Harga).
+        
+        Args:
+            current_price (float): Harga saham saat ini.
+            
+        Returns:
+            float: Nominal nilai pasar bruto.
+        """
         return self.lots * LOT_SIZE * current_price
 
     def unrealized_pnl(self, current_price):
+        """
+        Menghitung floating Profit/Loss bersih setelah dikurangi estimasi fee transaksi jual (0.34%).
+        
+        Args:
+            current_price (float): Harga pasar saat ini.
+            
+        Returns:
+            float: Nominal floating PnL bersih (Net IDR).
+        """
         gross_pnl = (current_price - self.entry_price) * self.lots * LOT_SIZE
         estimated_sell_fees = current_price * self.lots * LOT_SIZE * SELL_TOTAL_FEE_PCT
         return gross_pnl - estimated_sell_fees
 
     def unrealized_pnl_pct(self, current_price):
+        """
+        Menghitung persentase floating Profit/Loss bersih terhadap total modal yang diinvestasikan.
+        
+        Args:
+            current_price (float): Harga pasar saat ini.
+            
+        Returns:
+            float: Persentase floating return bersih (%).
+        """
         if self.entry_price == 0:
             return 0
         net_pnl = self.unrealized_pnl(current_price)
@@ -168,6 +276,12 @@ class Position:
         return (net_pnl / total_cost) * 100
 
     def to_dict(self):
+        """
+        Mengonversi objek Position menjadi dictionary serializable JSON.
+        
+        Returns:
+            dict: Representasi dictionary posisi saham.
+        """
         return {
             "symbol": self.symbol,
             "code": self.code,
@@ -189,13 +303,25 @@ class Position:
 
 
 class RiskManager:
+    """
+    Manajer Risiko Portofolio Saham Indonesia.
+    
+    Attributes:
+        positions (dict): Map dari symbol -> objek Position aktif.
+        trade_history (list): Riwayat seluruh transaksi jual yang telah selesai.
+        daily_loss_limit_pct (float): Batas toleransi kerugian harian (default 5%).
+        last_check_date (str): Tanggal pengecekan harian terakhir.
+    """
+
     def __init__(self):
+        """Inisialisasi RiskManager dan memuat riwayat transaksi dari file JSON."""
         self.positions = {}
         self.trade_history = self._load_history()
         self.daily_loss_limit_pct = MAX_DAILY_LOSS_PCT
         self.last_check_date = datetime.now().strftime("%Y-%m-%d")
 
     def _load_history(self):
+        """Memuat riwayat transaksi dari file JSON lokal."""
         if os.path.exists(TRADE_HISTORY_FILE):
             try:
                 with open(TRADE_HISTORY_FILE, "r") as f:
@@ -205,6 +331,7 @@ class RiskManager:
         return []
 
     def _save_history(self):
+        """Menyimpan riwayat transaksi ke file JSON lokal."""
         try:
             with open(TRADE_HISTORY_FILE, "w") as f:
                 json.dump(self.trade_history, f, indent=2)
@@ -212,6 +339,13 @@ class RiskManager:
             logger.error(f"Error saving trade history: {e}")
 
     def sync_positions_from_exchange(self, exchange, trader):
+        """
+        Melakukan sinkronisasi posisi kepemilikan saham riil dari browser automation Ajaib.
+        
+        Args:
+            exchange (StockExchange): Instance data pasar Yahoo Finance.
+            trader (AjaibTrader): Instance automasi browser Ajaib.
+        """
         portfolio = trader.get_portfolio()
         if not portfolio:
             return
@@ -238,6 +372,12 @@ class RiskManager:
                 logger.warning(f"Error parsing stock: {e}")
 
     def get_daily_pnl(self):
+        """
+        Menghitung total profit/loss terealisasi hari ini (WIB).
+        
+        Returns:
+            float: Akumulasi PnL hari ini dalam IDR.
+        """
         today = now_jakarta().strftime("%Y-%m-%d")
         pnl = 0
         for t in self.trade_history:
@@ -247,6 +387,15 @@ class RiskManager:
         return pnl
 
     def is_daily_loss_limit_reached(self, balance):
+        """
+        Memeriksa apakah kerugian hari ini telah menyentuh batas maksimal (5%).
+        
+        Args:
+            balance (float): Total modal/saldo kas.
+            
+        Returns:
+            bool: True jika batas kerugian tercapai, False jika masih aman.
+        """
         daily_pnl = self.get_daily_pnl()
         if daily_pnl >= 0:
             return False
@@ -254,12 +403,40 @@ class RiskManager:
         return loss_pct >= self.daily_loss_limit_pct
 
     def get_open_positions_count(self):
+        """
+        Menghitung jumlah posisi saham yang sedang aktif terbuka.
+        
+        Returns:
+            int: Jumlah open positions.
+        """
         return sum(1 for p in self.positions.values() if p.status == "open")
 
     def can_open_position(self):
+        """
+        Mengecek apakah kuota posisi terbuka masih tersedia (< MAX_OPEN_POSITIONS).
+        
+        Returns:
+            bool: True jika masih boleh buka posisi baru.
+        """
         return self.get_open_positions_count() < MAX_OPEN_POSITIONS
 
     def calculate_lots(self, balance, current_price, is_primary=True):
+        """
+        Menghitung ukuran order dalam satuan Lot berdasarkan modal, harga, dan manajemen risiko.
+        
+        Formula:
+        - Primary stock: 2% risk allocation
+        - Secondary stock: 1% risk allocation
+        - Dikonversi ke lot bulat (1 lot = 100 lembar) dengan memperhitungkan biaya beli 0.14%.
+        
+        Args:
+            balance (float): Saldo kas IDR.
+            current_price (float): Harga per lembar saham.
+            is_primary (bool, optional): Apakah saham prioritas utama.
+            
+        Returns:
+            int: Jumlah lot yang disarankan.
+        """
         if is_primary:
             risk_amount = balance * RISK_PER_TRADE
         else:
@@ -279,6 +456,18 @@ class RiskManager:
         return max(1, lots)
 
     def add_position(self, symbol, entry_price, lots, code=None):
+        """
+        Mencatat posisi saham baru ke dalam portofolio aktif.
+        
+        Args:
+            symbol (str): Simbol saham Yahoo Finance.
+            entry_price (float): Harga beli per lembar.
+            lots (int): Jumlah lot.
+            code (str, optional): Kode singkat saham.
+            
+        Returns:
+            Position: Objek posisi yang baru dibuat.
+        """
         position = Position(symbol, entry_price, lots, code)
         self.positions[symbol] = position
         logger.info(
@@ -288,6 +477,16 @@ class RiskManager:
         return position
 
     def close_position(self, symbol, exit_price):
+        """
+        Menutup posisi saham, menghitung biaya fee beli & jual aktual, dan mencatat rekam jejak trade ke history.
+        
+        Args:
+            symbol (str): Simbol saham.
+            exit_price (float): Harga jual per lembar.
+            
+        Returns:
+            dict or None: Record data trade lengkap yang mencakup Gross PnL, Fees, dan Net PnL.
+        """
         if symbol in self.positions:
             pos = self.positions[symbol]
             pos.status = "closed"
@@ -338,6 +537,16 @@ class RiskManager:
         return None
 
     def check_stop_loss_take_profit(self, symbol, current_price):
+        """
+        Mengecek apakah harga terkini melanggar Stop Loss atau mencapai Take Profit.
+        
+        Args:
+            symbol (str): Simbol saham.
+            current_price (float): Harga terkini di pasar.
+            
+        Returns:
+            str or None: 'stop_loss', 'take_profit', atau None.
+        """
         if symbol not in self.positions:
             return None
 
@@ -353,15 +562,36 @@ class RiskManager:
         return None
 
     def get_total_pnl(self):
+        """
+        Menghitung total profit/loss bersih kumulatif dari seluruh riwayat trading.
+        
+        Returns:
+            float: Grand total Net PnL dalam IDR.
+        """
         return sum(t.get("pnl_amount", 0) for t in self.trade_history)
 
     def get_win_rate(self):
+        """
+        Menghitung rasio kemenangan (Win Rate persentase) dari riwayat transaksi yang ditutup.
+        
+        Returns:
+            float: Win rate dalam persen (0 - 100%).
+        """
         if not self.trade_history:
             return 0
         wins = sum(1 for t in self.trade_history if t.get("pnl_amount", 0) > 0)
         return round(wins / len(self.trade_history) * 100, 2)
 
     def get_unrealized_pnl(self, exchange):
+        """
+        Menghitung total floating Profit/Loss bersih untuk seluruh posisi saham yang sedang dibuka.
+        
+        Args:
+            exchange (StockExchange): Instance data exchange.
+            
+        Returns:
+            float: Total floating PnL bersih dalam IDR.
+        """
         total_unrealized = 0
         for symbol, pos in self.positions.items():
             if pos.status == "open":
@@ -373,6 +603,15 @@ class RiskManager:
         return round(total_unrealized, 2)
 
     def get_total_stock_value(self, exchange):
+        """
+        Menghitung total nilai pasar aset saham yang sedang dipegang saat ini.
+        
+        Args:
+            exchange (StockExchange): Instance data exchange.
+            
+        Returns:
+            float: Nilai pasar bruto saham.
+        """
         total = 0
         for symbol, pos in self.positions.items():
             if pos.status == "open":
@@ -382,6 +621,15 @@ class RiskManager:
         return total
 
     def get_position_details(self, exchange):
+        """
+        Menghasilkan dictionary rincian mendalam setiap posisi aktif untuk laporan Telegram & bot dashboard.
+        
+        Args:
+            exchange (StockExchange): Instance data exchange.
+            
+        Returns:
+            dict: Map dari symbol -> detail posisi (harga beli, harga saat ini, PnL bersih, estimasi fee jual, break-even).
+        """
         details = {}
         for symbol, pos in self.positions.items():
             if pos.status == "open":
@@ -409,7 +657,30 @@ class RiskManager:
 
 
 class TradingStrategy:
+    """
+    Evaluator Strategi Trading Saham Indonesia (IDX Engine).
+    
+    Menentukan keputusan eksekusi order (BUY, DCA, PARTIAL SELL, CLOSE, HOLD)
+    berdasarkan sinyal teknikal, filter RSI, risk-to-reward ratio, dan batas risiko.
+    
+    Attributes:
+        analyzer (MarketAnalyzer): Engine analisis teknikal.
+        risk_manager (RiskManager): Pengelola risiko dan portofolio.
+        min_confidence (float): Ambang batas minimum keyakinan sinyal (default 0.70).
+        rsi_overbought (float): Batas overbought (default 70).
+        rsi_entry_max (float): Batas maksimal RSI untuk entry buy (default 40).
+        min_risk_reward (float): Rasio minimal reward vs risk (default 2.0).
+        min_win_rate (float): Batas minimum win rate historis (default 40%).
+    """
+
     def __init__(self, analyzer, risk_manager):
+        """
+        Inisialisasi TradingStrategy.
+        
+        Args:
+            analyzer (MarketAnalyzer): Engine analisis teknikal.
+            risk_manager (RiskManager): Pengelola risiko.
+        """
         self.analyzer = analyzer
         self.risk_manager = risk_manager
         self.min_confidence = 0.70
@@ -419,6 +690,34 @@ class TradingStrategy:
         self.min_win_rate = 40.0
 
     def evaluate(self, symbol, ohlcv, balance, current_price, is_primary=True):
+        """
+        Mengevaluasi kondisi pasar dan portofolio untuk menghasilkan instruksi trading yang tepat.
+        
+        Logika Evaluasi:
+        1. Jika saham sudah dipegang:
+           - Update trailing stop (+5% dari puncak tertinggi).
+           - Cek apakah trailing stop tertembus -> action 'close'.
+           - Cek Take Profit 1 (+4%) -> action 'partial_sell' (50% lot).
+           - Cek Take Profit 2 (+8%) -> action 'close'.
+           - Cek DCA (-3% atau -6%) -> action 'buy' (averaging down).
+           - Smart exit: RSI > 70 atau RSI > 65 dengan MACD bearish -> action 'close'.
+        2. Jika sinyal BUY baru terdeteksi:
+           - Validasi RSI <= 40 (tidak membeli di pucuk).
+           - Validasi Win Rate >= 40% (setelah minimal 5 trade).
+           - Validasi Risk/Reward >= 2.0.
+           - Validasi ketersediaan saldo dan kuota posisi terbuka.
+           - Hitung lot order -> action 'buy'.
+        
+        Args:
+            symbol (str): Simbol saham (misal 'BBCA.JK').
+            ohlcv (list): Data candlestick saham.
+            balance (float): Saldo kas IDR tersedia.
+            current_price (float): Harga saham saat ini.
+            is_primary (bool, optional): Apakah saham termasuk koin/saham prioritas utama.
+            
+        Returns:
+            dict: Keputusan aksi trading {'action': 'buy'/'partial_sell'/'close'/'hold', 'lots': int, ...}.
+        """
         analysis = self.analyzer.analyze(ohlcv, symbol=symbol)
         signal = analysis["signal"]
         confidence = analysis["confidence"]
@@ -431,15 +730,18 @@ class TradingStrategy:
             f"RSI: {rsi} | Price: {current_price:,.0f}"
         )
 
+        # 1. Pengecekan posisi yang sudah berjalan (Open Position Management)
         if symbol in self.risk_manager.positions and self.risk_manager.positions[symbol].status == "open":
             pos = self.risk_manager.positions[symbol]
 
+            # Trailing stop update
             if pos.update_trailing_stop(current_price):
                 logger.info(
                     f"[{symbol}] Trailing stop updated: {pos.stop_loss:,.0f} "
                     f"(highest: {pos.highest_price:,.0f})"
                 )
 
+            # Eksekusi trailing stop
             if pos.check_trailing_stop(current_price):
                 return {
                     "action": "close",
@@ -448,6 +750,7 @@ class TradingStrategy:
                     "lots": pos.lots,
                 }
 
+            # Eksekusi Partial Take Profit 1 (+4%)
             if pos.should_partial_sell(current_price):
                 partial_lots = pos.partial_sell_lots()
                 pos.partial_sell_count += 1
@@ -459,6 +762,7 @@ class TradingStrategy:
                     "lots": partial_lots,
                 }
 
+            # Eksekusi Full Take Profit 2 (+8%)
             if pos.should_full_sell(current_price):
                 return {
                     "action": "close",
@@ -467,6 +771,7 @@ class TradingStrategy:
                     "lots": pos.lots,
                 }
 
+            # Eksekusi Dollar Cost Averaging (DCA)
             if pos.should_dca(current_price):
                 dca_lots = pos.dca_lots()
                 dca_cost = dca_lots * LOT_SIZE * current_price
@@ -489,6 +794,7 @@ class TradingStrategy:
                 else:
                     logger.info(f"[{symbol}] DCA skipped: insufficient balance")
 
+            # Eksekusi Take Profit standar
             if current_price >= pos.take_profit:
                 return {
                     "action": "close",
@@ -497,6 +803,7 @@ class TradingStrategy:
                     "lots": pos.lots,
                 }
 
+            # Smart exit jika RSI jenuh beli
             if rsi >= self.rsi_overbought and confidence > 0.5:
                 return {
                     "action": "close",
@@ -505,6 +812,7 @@ class TradingStrategy:
                     "lots": pos.lots,
                 }
 
+            # Smart exit jika momentum MACD berbalik bearish
             macd_hist = indicators.get("macd_histogram", 0)
             if rsi > 65 and macd_hist < 0:
                 return {
@@ -514,6 +822,7 @@ class TradingStrategy:
                     "lots": pos.lots,
                 }
 
+        # 2. Pengecekan sinyal baru untuk Entry Beli
         if signal == "hold" or confidence < self.min_confidence:
             return {"action": "hold", "analysis": analysis}
 
@@ -560,3 +869,4 @@ class TradingStrategy:
             }
 
         return {"action": "hold", "analysis": analysis}
+

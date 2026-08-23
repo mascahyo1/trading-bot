@@ -87,6 +87,16 @@ class StockExchange:
             return None
 
     def fetch_ticker(self, symbol):
+        """
+        Mengambil informasi ticker harga real-time dan statistik harian saham.
+        
+        Args:
+            symbol (str): Simbol saham Yahoo Finance (misal 'BBCA.JK').
+            
+        Returns:
+            dict or None: Dictionary berisi 'symbol', 'last' (harga terkini), 'previous_close',
+                          'change', 'change_pct', 'volume', atau None jika gagal.
+        """
         try:
             ticker = yf.Ticker(symbol)
             info = ticker.fast_info
@@ -118,6 +128,17 @@ class StockExchange:
             return None
 
     def fetch_intraday(self, symbol, period="1d", interval="5m"):
+        """
+        Mengambil data candlestick intraday jangka pendek (misal 5 menit).
+        
+        Args:
+            symbol (str): Simbol saham (misal 'BBCA.JK').
+            period (str, optional): Periode data. Default '1d'.
+            interval (str, optional): Interval candlestick. Default '5m'.
+            
+        Returns:
+            list or None: List baris OHLCV [timestamp_ms, open, high, low, close, volume] atau None.
+        """
         try:
             ticker = yf.Ticker(symbol)
             hist = ticker.history(period=period, interval=interval)
@@ -141,6 +162,15 @@ class StockExchange:
             return None
 
     def get_stock_name(self, symbol):
+        """
+        Mengambil nama panjang resmi perusahaan/emiten dari Yahoo Finance metadata.
+        
+        Args:
+            symbol (str): Simbol saham.
+            
+        Returns:
+            str: Nama perusahaan (misal 'Bank Central Asia Tbk') atau kode emiten jika tidak ditemukan.
+        """
         code = STOCK_CODE_MAP.get(symbol, symbol.replace(".JK", ""))
         try:
             ticker = yf.Ticker(symbol)
@@ -153,6 +183,15 @@ class StockExchange:
         return code
 
     def get_multiple_prices(self, symbols):
+        """
+        Mengambil harga pasar terkini untuk sekumpulan kode saham sekaligus secara batch.
+        
+        Args:
+            symbols (list): Daftar simbol saham (misal ['BBCA.JK', 'BMRI.JK']).
+            
+        Returns:
+            dict: Map dari symbol -> harga terakhir (float).
+        """
         prices = {}
         for sym in symbols:
             ticker = self.fetch_ticker(sym)
@@ -163,6 +202,9 @@ class StockExchange:
 
 
 def main():
+    """
+    Fungsi pengujian mandiri konektivitas StockExchange ke Yahoo Finance.
+    """
     ex = StockExchange()
     price = ex.fetch_ticker("BBCA.JK")
     if price:
@@ -175,3 +217,4 @@ def main():
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     main()
+

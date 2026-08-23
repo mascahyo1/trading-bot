@@ -1,10 +1,17 @@
+"""
+Script Pengujian Pembacaan dan Parsing File Lingkungan (.env)
+
+Memeriksa keberadaan file .env serta mencetak semua key dan panjang value yang terdeteksi.
+
+Author: AI Trading Bot
+"""
+
 import sys
 import os
 
-sys.path.insert(0, "/home/cahyo/trading-bot/indodax")
-os.chdir("/home/cahyo/trading-bot/indodax")
-
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, SCRIPT_DIR)
+os.chdir(SCRIPT_DIR)
 
 env_path = os.path.join(SCRIPT_DIR, ".env")
 if not os.path.exists(env_path):
@@ -19,3 +26,4 @@ with open(env_path) as f:
         if "=" in line and not line.startswith("#"):
             k, v = line.split("=", 1)
             print(f"Key: [{k.strip()}] Value: [{v.strip()}] Len: {len(v.strip())}")
+

@@ -1,7 +1,17 @@
 #!/usr/bin/env python3
 """
-Watchdog - Monitor bot health + portfolio every 5 minutes via Telegram
-Cron: */5 * * * * /home/cahyo/trading/venv/bin/python3 /home/cahyo/trading/indodax/watchdog.py
+Indodax Watchdog & Heartbeat Monitor (5-Minute Cron Job)
+
+Skrip pemantau kesehatan (watchdog) yang berjalan setiap 5 menit via cron:
+1. Memverifikasi apakah proses bot Python masih aktif berjalan di OS (`pgrep`).
+2. Memeriksa apakah file log hari ini aktif diperbarui (stale log alert jika tidak update > 20 menit).
+3. Mengirimkan notifikasi darurat (BOT DOWN!) ke Telegram jika terjadi crash/hang.
+4. Mengirimkan sinyal heartbeat berkala (BOT ALIVE) dengan ringkasan saldo IDR dan daily PnL jika sistem sehat.
+
+Cron Syntax:
+*/5 * * * * /home/cahyo/trading/venv/bin/python3 /home/cahyo/trading/indodax/watchdog.py
+
+Author: AI Trading Bot
 """
 import time
 import json
@@ -24,15 +34,27 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 LOG_DIR = os.path.join(SCRIPT_DIR, "logs")
 
+
 def get_today_log():
+    """
+    Mengambil path file log bot hari ini berdasarkan tanggal Jakarta.
+    
+    Returns:
+        str: Absolute path ke file log hari ini.
+    """
     today = now_jakarta().strftime("%Y-%m-%d")
     return os.path.join(LOG_DIR, f"{today}.log")
+
 
 BOT_LOG = get_today_log()
 TELEGRAM_TOKEN = ""
 TELEGRAM_CHAT_ID = ""
 
+
 def load_env():
+    """
+    Memuat variabel lingkungan Telegram Bot Token & Chat ID dari file `.env`.
+    """
     global TELEGRAM_TOKEN, TELEGRAM_CHAT_ID
     env_path = os.path.join(SCRIPT_DIR, ".env")
     if not os.path.exists(env_path):
@@ -47,7 +69,14 @@ def load_env():
                 elif k.strip() == "Telegram_Chat_ID":
                     TELEGRAM_CHAT_ID = v.strip()
 
+
 def send_telegram(text):
+    """
+    Mengirim pesan status watchdog ke Telegram Bot API.
+    
+    Args:
+        text (str): Pesan teks terformat HTML.
+    """
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
         return
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -59,8 +88,14 @@ def send_telegram(text):
     except Exception:
         pass
 
+
 def get_portfolio():
-    """Get all balances and calculate IDR value"""
+    """
+    Mengambil saldo kas dan seluruh koin di akun Indodax untuk dihitung total ekuivalen IDR-nya.
+    
+    Returns:
+        dict or None: Rangkuman 'total_idr', 'assets', dan 'daily_pnl', atau None jika gagal.
+    """
     sys.path.insert(0, SCRIPT_DIR)
     try:
         from exchange import IndodaxExchange
@@ -95,7 +130,19 @@ def get_portfolio():
         logger.error(f"Portfolio error: {e}")
         return None
 
+
 def check_bot_health():
+    """
+    Memeriksa kesehatan operasional proses bot Indodax di sistem operasi.
+    
+    Kriteria Pengecekan:
+    1. Keberadaan file log hari ini.
+    2. Waktu modifikasi terakhir file log (tidak boleh macet > 20 menit).
+    3. Status proses bot di sistem operasi (`pgrep`).
+    
+    Returns:
+        list: Daftar string pesan error (kosong jika bot dalam kondisi sehat).
+    """
     errors = []
     if not os.path.exists(BOT_LOG):
         errors.append("Log file not found")
@@ -109,7 +156,11 @@ def check_bot_health():
         errors.append("Bot process not running")
     return errors
 
+
 def main():
+    """
+    Fungsi entri utama eksekusi watchdog 5 menit.
+    """
     load_env()
     errors = check_bot_health()
 
@@ -155,5 +206,7 @@ def main():
     send_telegram("\n".join(lines))
     print(f"HEARTBEAT - {format_datetime()}")
 
+
 if __name__ == "__main__":
     main()
+

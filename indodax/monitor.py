@@ -1,7 +1,17 @@
 #!/usr/bin/env python3
 """
-Indodax Bot Monitor - Analyze performance every 2 hours
-Runs via cron: 0 */2 * * * /home/cahyo/trading/venv/bin/python3 /home/cahyo/trading/indodax/monitor.py
+Indodax Bot Performance Monitor & AI Evaluator (2-Hour Cron Job)
+
+Skrip berkala yang dijalankan via cron job setiap 2 jam untuk:
+1. Membaca dan merangkum log aktivitas bot 2 jam terakhir (siklus scanning, error, trade fills).
+2. Menghitung metrik performa historis (Win Rate, Total PnL, PnL harian, Average Win/Loss).
+3. Mengirimkan ringkasan metrik ke model AI LLM untuk menghasilkan evaluasi performa dan saran perbaikan.
+4. Mengirimkan hasil laporan analitik langsung ke Telegram.
+
+Cron Syntax:
+0 */2 * * * /home/cahyo/trading/venv/bin/python3 /home/cahyo/trading/indodax/monitor.py
+
+Author: AI Trading Bot
 """
 import os
 import sys
@@ -22,7 +32,11 @@ LOG_DIR = os.path.join(SCRIPT_DIR, "logs")
 TELEGRAM_TOKEN = ""
 TELEGRAM_CHAT_ID = ""
 
+
 def load_env():
+    """
+    Memuat kredensial Telegram Bot dari file konfigurasi lingkungan `.env`.
+    """
     global TELEGRAM_TOKEN, TELEGRAM_CHAT_ID
     env_path = os.path.join(os.path.dirname(SCRIPT_DIR), ".env")
     if not os.path.exists(env_path):
@@ -38,7 +52,17 @@ def load_env():
                     elif k.strip() == "Telegram_Chat_ID":
                         TELEGRAM_CHAT_ID = v.strip()
 
+
 def send_telegram(text):
+    """
+    Mengirimkan pesan ringkasan analitik ke Telegram Bot API.
+    
+    Args:
+        text (str): Pesan teks terformat HTML.
+        
+    Returns:
+        bool: True jika berhasil dikirim, False jika gagal.
+    """
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
         print("Telegram not configured")
         return False
@@ -57,8 +81,17 @@ def send_telegram(text):
         print(f"Telegram error: {e}")
         return False
 
+
 def parse_logs(hours=2):
-    """Parse bot logs from last N hours"""
+    """
+    Membaca dan mem-parse file log bot dalam rentang N jam terakhir.
+    
+    Args:
+        hours (int, optional): Rentang jam ke belakang untuk dianalisis. Default 2 jam.
+        
+    Returns:
+        dict: Ringkasan berisi 'trades', 'errors', dan 'total_cycles'.
+    """
     cutoff = now_jakarta() - timedelta(hours=hours)
     cutoff_str = cutoff.strftime("%Y-%m-%d %H:")
     
@@ -95,7 +128,12 @@ def parse_logs(hours=2):
     }
 
 def parse_trade_history():
-    """Parse trade history JSON"""
+    """
+    Membaca dan mem-parse file riwayat transaksi JSON (`trade_history.json`).
+    
+    Returns:
+        list: Daftar transaksi historis atau list kosong jika file tidak ada/gagal dibaca.
+    """
     history_file = os.path.join(SCRIPT_DIR, "trade_history.json")
     if not os.path.exists(history_file):
         return []
@@ -105,8 +143,17 @@ def parse_trade_history():
     except Exception:
         return []
 
+
 def calculate_metrics(trades_history):
-    """Calculate performance metrics"""
+    """
+    Menghitung statistik performa trading (Win Rate, Total PnL, PnL Hari Ini, Rasio Win/Loss).
+    
+    Args:
+        trades_history (list): Daftar dictionary riwayat transaksi.
+        
+    Returns:
+        dict: Struktur metrik performa.
+    """
     if not trades_history:
         return {}
     
@@ -134,8 +181,18 @@ def calculate_metrics(trades_history):
         "today_pnl": round(today_pnl, 2),
     }
 
+
 def analyze_with_llm(metrics, logs_summary):
-    """Send analysis to LongCat API and get improvement suggestions"""
+    """
+    Mengirimkan metrik dan log aktivitas ke API AI LLM untuk menghasilkan evaluasi performa dan saran optimalisasi.
+    
+    Args:
+        metrics (dict): Metrik performa trading yang sudah dihitung.
+        logs_summary (dict): Rangkuman error dan total siklus dari log bot.
+        
+    Returns:
+        str: Saran dan analisis mendalam dari AI LLM dalam bahasa Indonesia.
+    """
     if not LLM_API_KEY or not LLM_BASE_URL:
         return "LLM not configured for analysis"
     
@@ -189,8 +246,11 @@ Keep response concise (max 500 words). Use Indonesian language."""
     except Exception as e:
         return f"Analysis failed: {str(e)[:100]}"
 
+
 def run_analysis():
-    """Run full analysis and send report"""
+    """
+    Menjalankan alur lengkap analisis bot (parsing log, perhitungan metrik, evaluasi AI, dan kirim Telegram).
+    """
     load_env()
     
     print(f"[{format_datetime()}] Starting analysis...")

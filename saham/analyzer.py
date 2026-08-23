@@ -48,6 +48,15 @@ class MarketAnalyzer:
         self.use_llm = use_llm
 
     def prepare_dataframe(self, ohlcv):
+        """
+        Mengonversi daftar baris OHLCV menjadi DataFrame pandas dengan index waktu terformat.
+        
+        Args:
+            ohlcv (list): List baris candlestick [timestamp, open, high, low, close, volume].
+            
+        Returns:
+            pd.DataFrame: DataFrame dengan kolom standar.
+        """
         df = pd.DataFrame(
             ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"]
         )
@@ -55,6 +64,16 @@ class MarketAnalyzer:
         return df
 
     def calc_rsi(self, series, period=14):
+        """
+        Menghitung Relative Strength Index (RSI) menggunakan Exponential Moving Average.
+        
+        Args:
+            series (pd.Series): Seri harga penutupan (close prices).
+            period (int, optional): Periode observasi RSI. Default 14.
+            
+        Returns:
+            pd.Series: Deret nilai RSI (0 - 100).
+        """
         delta = series.diff()
         gain = delta.where(delta > 0, 0.0)
         loss = -delta.where(delta < 0, 0.0)
@@ -65,6 +84,18 @@ class MarketAnalyzer:
         return rsi
 
     def calc_macd(self, series, fast=12, slow=26, signal=9):
+        """
+        Menghitung Moving Average Convergence Divergence (MACD Line, Signal Line, Histogram).
+        
+        Args:
+            series (pd.Series): Seri harga penutupan.
+            fast (int, optional): Periode EMA cepat. Default 12.
+            slow (int, optional): Periode EMA lambat. Default 26.
+            signal (int, optional): Periode sinyal EMA. Default 9.
+            
+        Returns:
+            tuple: (macd_line, signal_line, histogram).
+        """
         ema_fast = series.ewm(span=fast, adjust=False).mean()
         ema_slow = series.ewm(span=slow, adjust=False).mean()
         macd_line = ema_fast - ema_slow
@@ -73,9 +104,30 @@ class MarketAnalyzer:
         return macd_line, signal_line, histogram
 
     def calc_ema(self, series, period):
+        """
+        Menghitung Exponential Moving Average (EMA).
+        
+        Args:
+            series (pd.Series): Seri harga.
+            period (int): Periode moving average.
+            
+        Returns:
+            pd.Series: Deret nilai EMA.
+        """
         return series.ewm(span=period, adjust=False).mean()
 
     def calc_bollinger(self, series, period=20, std_dev=2):
+        """
+        Menghitung Bollinger Bands (Upper Band, Middle SMA, Lower Band).
+        
+        Args:
+            series (pd.Series): Seri harga penutupan.
+            period (int, optional): Periode SMA tengah. Default 20.
+            std_dev (int, optional): Pengali standar deviasi. Default 2.
+            
+        Returns:
+            tuple: (upper_band, sma_middle, lower_band).
+        """
         sma = series.rolling(window=period).mean()
         std = series.rolling(window=period).std()
         upper = sma + (std * std_dev)
@@ -83,6 +135,16 @@ class MarketAnalyzer:
         return upper, sma, lower
 
     def calc_atr(self, df, period=14):
+        """
+        Menghitung Average True Range (ATR) untuk mengukur volatilitas saham.
+        
+        Args:
+            df (pd.DataFrame): DataFrame harga (high, low, close).
+            period (int, optional): Periode ATR. Default 14.
+            
+        Returns:
+            pd.Series: Deret nilai volatilitas ATR.
+        """
         high_low = df["high"] - df["low"]
         high_close = (df["high"] - df["close"].shift()).abs()
         low_close = (df["low"] - df["close"].shift()).abs()
@@ -91,6 +153,15 @@ class MarketAnalyzer:
         return atr
 
     def analyze_rsi(self, rsi_series):
+        """
+        Mengevaluasi kondisi Overbought (> 70) dan Oversold (< 30) dari RSI.
+        
+        Args:
+            rsi_series (pd.Series): Deret RSI.
+            
+        Returns:
+            tuple: (signal, score).
+        """
         current = rsi_series.iloc[-1]
         if current < 30:
             return "buy", (30 - current) / 30
@@ -103,6 +174,17 @@ class MarketAnalyzer:
         return "hold", 0.0
 
     def analyze_macd(self, macd_line, signal_line, histogram):
+        """
+        Mengevaluasi momentum tren dan crossover garis MACD vs Signal.
+        
+        Args:
+            macd_line (pd.Series): Garis MACD.
+            signal_line (pd.Series): Garis sinyal.
+            histogram (pd.Series): Histogram MACD.
+            
+        Returns:
+            tuple: (signal, score).
+        """
         curr_macd = macd_line.iloc[-1]
         curr_signal = signal_line.iloc[-1]
         curr_hist = histogram.iloc[-1]
@@ -119,6 +201,15 @@ class MarketAnalyzer:
         return "hold", 0.0
 
     def analyze_ema(self, df):
+        """
+        Mengevaluasi Golden Cross / Death Cross antara EMA 9 & EMA 21 serta posisi terhadap EMA 50.
+        
+        Args:
+            df (pd.DataFrame): Data OHLCV saham.
+            
+        Returns:
+            tuple: (signal, score).
+        """
         ema_9 = self.calc_ema(df["close"], 9)
         ema_21 = self.calc_ema(df["close"], 21)
         ema_50 = self.calc_ema(df["close"], 50)
@@ -155,6 +246,15 @@ class MarketAnalyzer:
         return signal, min(max(score, 0), 1.5)
 
     def analyze_bollinger(self, df):
+        """
+        Mengevaluasi posisi harga terhadap Lower dan Upper Bollinger Bands.
+        
+        Args:
+            df (pd.DataFrame): Data OHLCV saham.
+            
+        Returns:
+            tuple: (signal, score).
+        """
         upper, sma, lower = self.calc_bollinger(df["close"])
         curr_price = df["close"].iloc[-1]
         curr_upper = upper.iloc[-1]
@@ -172,6 +272,15 @@ class MarketAnalyzer:
         return "hold", 0.0
 
     def analyze_volume(self, df):
+        """
+        Mengevaluasi lonjakan volume perdagangan terkini terhadap rata-rata 20 hari (SMA 20).
+        
+        Args:
+            df (pd.DataFrame): Data OHLCV saham.
+            
+        Returns:
+            tuple: (volume_strength, score).
+        """
         vol_sma = df["volume"].rolling(window=20).mean()
         curr_vol = df["volume"].iloc[-1]
         avg_vol = vol_sma.iloc[-1]
@@ -187,6 +296,16 @@ class MarketAnalyzer:
         return "normal", 0.0
 
     def analyze(self, ohlcv, symbol="UNKNOWN"):
+        """
+        Menjalankan pipeline analisis teknikal lengkap dan menghitung agregasi skor sinyal berbobot.
+        
+        Args:
+            ohlcv (list): Data candlestick saham.
+            symbol (str, optional): Simbol saham. Default 'UNKNOWN'.
+            
+        Returns:
+            dict: Ringkasan sinyal ('signal', 'confidence', 'buy_score', 'sell_score', 'indicators', 'symbol').
+        """
         if not ohlcv or len(ohlcv) < 50:
             logger.warning(f"Insufficient data for {symbol}")
             return {"signal": "hold", "confidence": 0, "indicators": {}, "symbol": symbol}
@@ -270,4 +389,15 @@ class MarketAnalyzer:
         }
 
     def analyze_technical(self, ohlcv, symbol="UNKNOWN"):
+        """
+        Alias untuk fungsi `analyze` teknikal murni tanpa LLM.
+        
+        Args:
+            ohlcv (list): Data candlestick saham.
+            symbol (str, optional): Simbol saham. Default 'UNKNOWN'.
+            
+        Returns:
+            dict: Ringkasan sinyal trading.
+        """
         return self.analyze(ohlcv, symbol)
+

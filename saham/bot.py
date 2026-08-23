@@ -70,6 +70,11 @@ class SahamBot:
         trader (AjaibTrader): Browser automation untuk Ajaib
     """
     def __init__(self):
+        """
+        Inisialisasi semua komponen bot: exchange (yfinance), analyzer,
+        risk manager, strategy, notifier, Telegram, dan Ajaib trader.
+        Bot belum berjalan sampai start() dipanggil.
+        """
         self.logger = logging.getLogger("saham_bot")
         self.exchange = StockExchange()
         self.analyzer = MarketAnalyzer(use_llm=False)
@@ -85,10 +90,22 @@ class SahamBot:
         self.trades_today = 0
         self._stop_event = threading.Event()
         self._last_cash = 0
+        # Cache portfolio terakhir dari Ajaib; dibaca telegram_handler via state file
         self._portfolio_cache = {"cash": 0, "stocks": [], "timestamp": ""}
 
 
     def is_market_open(self):
+        """
+        Cek apakah pasar saham BEI sedang buka untuk sesi reguler.
+
+        Sesi perdagangan reguler BEI:
+          - Sesi I  : 09:00 - 11:30 WIB
+          - Sesi II : 13:30 - 14:59 WIB
+        Sabtu/Minggu libur.
+
+        Returns:
+            bool: True jika dalam jam perdagangan reguler.
+        """
         now = now_jakarta()
         if now.weekday() >= 5:
             return False
@@ -103,9 +120,16 @@ class SahamBot:
         return False
 
     def get_cash_balance(self):
+        """
+        Ambil saldo kas terakhir yang diketahui (dari cache internal).
+
+        Returns:
+            float: Saldo kas IDR dari update_cash_balance() terakhir. 0 jika belum pernah sync.
+        """
         return self._last_cash
 
     def update_cash_balance(self):
+        """Sinkronkan saldo kas dari scrape halaman home Ajaib ke cache internal."""
         try:
             portfolio = self.trader.get_portfolio()
             if portfolio and portfolio.get("cash") is not None:
@@ -114,6 +138,17 @@ class SahamBot:
             self.logger.warning(f"Could not update cash balance: {e}")
 
     def execute_buy(self, symbol, lots, current_price):
+        """
+        Eksekusi order BELI via browser Ajaib + catat posisi + kirim notifikasi.
+
+        Args:
+            symbol (str): Simbol saham (mis. "BBCA.JK")
+            lots (int): Jumlah lot yang dibeli
+            current_price (float): Harga referensi saat order dikirim
+
+        Returns:
+            bool: True jika order berhasil dikirim dan posisi tercatat.
+        """
         code = STOCK_CODE_MAP.get(symbol, symbol.replace(".JK", ""))
         self.logger.info(f"Executing BUY: {code} x{lots} lots @ {current_price:,.0f}")
 
@@ -130,6 +165,16 @@ class SahamBot:
             return False
 
     def execute_sell(self, symbol, current_price):
+        """
+        Eksekusi order JUAL SELURUH posisi + tutup posisi + kirim notifikasi net PnL.
+
+        Args:
+            symbol (str): Simbol saham (mis. "BBCA.JK")
+            current_price (float): Harga referensi saat order dikirim
+
+        Returns:
+            bool: True jika seluruh posisi berhasil dijual.
+        """
         if symbol in self.risk_manager.positions:
             pos = self.risk_manager.positions[symbol]
             lots = pos.lots
@@ -157,6 +202,20 @@ class SahamBot:
         return False
 
     def execute_sell_partial(self, symbol, current_price, lots):
+        """
+        Eksekusi order JUAL SEBAGIAN posisi (profit taking TP1).
+
+        Net PnL dihitung manual karena posisi tidak ditutup penuh:
+            net_pnl = (nilai jual - biaya jual) - cost basis lot yang dijual
+
+        Args:
+            symbol (str): Simbol saham
+            current_price (float): Harga referensi saat order dikirim
+            lots (int): Jumlah lot yang dijual sebagian
+
+        Returns:
+            bool: True jika partial sell berhasil.
+        """
         if symbol in self.risk_manager.positions:
             pos = self.risk_manager.positions[symbol]
             self.logger.info(f"Executing PARTIAL SELL: {pos.code} x{lots} lots @ {current_price:,.0f}")
@@ -179,6 +238,15 @@ class SahamBot:
         return False
 
     def scan_all_stocks(self):
+        """
+        Scan semua saham di ALL_STOCKS: fetch candle 90 hari + harga terkini,
+        lalu jalankan analisis teknikal untuk masing-masing.
+
+        Delay 0.3s antar saham untuk hindari rate-limit yfinance.
+
+        Returns:
+            list: Hasil analisis per saham {signal, confidence, indicators, symbol, current_price}
+        """
         results = []
         for symbol in ALL_STOCKS:
             try:
@@ -200,11 +268,37 @@ class SahamBot:
         return results
 
     def get_top_candidates(self, results, signal_type="buy"):
+        """
+        Filter hasil scan dan ambil kandidat terbaik untuk dieksekusi.
+
+        Args:
+            results (list): Hasil analisis semua saham dari scan_all_stocks()
+            signal_type (str): "buy" atau "sell"
+
+        Returns:
+            list: Maks 5 kandidat dengan confidence > 55%, urut tertinggi.
+        """
         filtered = [r for r in results if r["signal"] == signal_type and r["confidence"] > 0.55]
         filtered.sort(key=lambda x: x["confidence"], reverse=True)
         return filtered[:5]
 
     def process_stock(self, symbol, ohlcv=None, is_primary=True):
+        """
+        Proses satu saham: evaluasi sinyal via strategy lalu eksekusi aksinya.
+
+        Aksi yang mungkin:
+          - buy          : cek saldo cukup (termasuk fee beli) -> execute_buy()
+          - partial_sell : profit taking sebagian       -> execute_sell_partial()
+          - close        : jual seluruh posisi           -> execute_sell()
+
+        Error per-saham ditangkap di sini agar satu kegagalan tidak
+        menghentikan pemrosesan saham lain.
+
+        Args:
+            symbol (str): Simbol saham
+            ohlcv (list, optional): Data candle; di-fetch otomatis jika None
+            is_primary (bool): True jika termasuk TRADING_STOCKS (risk lebih besar boleh)
+        """
         try:
             if ohlcv is None:
                 ohlcv = self.exchange.fetch_ohlcv(symbol, period="90d", interval="1d")
@@ -262,6 +356,13 @@ class SahamBot:
             self.telegram.notify_error(f"[{symbol}] {str(e)}")
 
     def write_state_to_file(self):
+        """
+        Tulis state bot ke saham_state.json untuk dikonsumsi telegram_handler.py.
+
+        Karena Saham bot TIDAK polling Telegram, semua command yang butuh data
+        (status, portfolio, analytics) dibaca dari file ini oleh listener
+        terpusat di proses Indodax bot. Dipanggil setiap akhir cycle.
+        """
         try:
             state = {
                 "timestamp": now_jakarta().isoformat(),
@@ -292,6 +393,15 @@ class SahamBot:
             self.logger.warning(f"Write state error: {e}")
 
     def send_portfolio_report(self):
+        """
+        Kirim laporan portfolio lengkap ke Telegram setiap cycle (tiap 5 menit).
+
+        Sumber data: scrape langsung halaman home Ajaib (cash + kepemilikan),
+        lalu harga real-time per saham dari yfinance untuk hitung nilai.
+        Hasil juga disimpan ke _portfolio_cache untuk state file.
+
+        Termasuk estimasi biaya jual dan grand total NET per posisi.
+        """
         try:
             self.update_cash_balance()
             cash = self.get_cash_balance()
@@ -370,6 +480,18 @@ class SahamBot:
             self.logger.warning(f"Portfolio report error: {e}")
 
     def run_cycle(self):
+        """
+        Satu siklus lengkap bot (dipanggil tiap 5 menit dari start()).
+
+        Urutan:
+          1. Reset counter harian saat ganti tanggal (00:00 WIB)
+          2. Skip jika pasar tutup
+          3. Sync saldo kas + posisi dari Ajaib
+          4. Scan semua saham -> filter kandidat buy/sell terbaik
+          5. Eksekusi aksi untuk tiap kandidat
+          6. Log summary + kirim portfolio report ke Telegram
+          7. Tulis state file untuk telegram_handler
+        """
         self.cycle_count += 1
         now = now_jakarta()
 
@@ -435,6 +557,7 @@ class SahamBot:
         self.logger.info("-" * 65)
 
     def _keyboard_listener(self):
+        """Thread listener keyboard: tekan 'q' + Enter untuk stop bot dengan aman (cross-platform)."""
         print("\n[BOT RUNNING] Press 'q' + Enter to stop safely\n")
         while self.running:
             try:
@@ -459,6 +582,11 @@ class SahamBot:
                 time.sleep(0.5)
 
     def start(self):
+        """
+        Main loop bot: jalankan run_cycle() tiap INTERVAL_SECONDS detik
+        sampai user stop (q / Ctrl+C / SIGTERM). Kirim notifikasi start
+        + portfolio report awal sebelum masuk loop.
+        """
         self.running = True
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGTERM, self._signal_handler)
@@ -499,16 +627,22 @@ class SahamBot:
         self._shutdown()
 
     def _signal_handler(self, signum, frame):
+        """Handler SIGINT/SIGTERM: set running=False agar loop berhenti dengan rapi."""
         self.logger.info(f"Signal {signum} received")
         self.running = False
 
     def stop(self):
+        """Stop bot dari Telegram command (dipanggil telegram_handler). Exit paksa setelah shutdown."""
         self.running = False
         self.logger.info("Bot stopping via Telegram...")
         self._shutdown()
         os._exit(0)
 
     def _shutdown(self):
+        """
+        Shutdown sequence: log statistik akhir, kirim notifikasi stop +
+        summary terakhir + portfolio report penutup ke Telegram.
+        """
         self.logger.info("=" * 65)
         self.logger.info("BOT STOPPED")
         self.logger.info(f"Total cycles: {self.cycle_count}")
@@ -530,6 +664,7 @@ class SahamBot:
 
 
 def main():
+    """Entry point bot saham: setup logger lalu jalankan SahamBot.start()."""
     setup_logger()
     bot = SahamBot()
     bot.start()
