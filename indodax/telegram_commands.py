@@ -283,15 +283,20 @@ def handle_command(text, chat_id):
 
     if cmd == "/status-indodax":
         send_telegram(prefix + get_status_text())
-    elif cmd == "/why-idle" or cmd == "/why":
+
+    elif cmd == "/why-idle-indodax" or cmd == "/why-indodax":
         send_telegram(prefix + get_why_idle_text())
+
     elif cmd == "/portfolio-indodax":
         send_telegram(prefix + get_portfolio_text())
+
     elif cmd == "/trades-indodax":
         send_telegram(prefix + get_trades_text())
+
     elif cmd == "/analytics-indodax" or cmd == "/stats-indodax":
         send_telegram(prefix + get_analytics_text())
-    elif cmd == "/analyze-improvement":
+
+    elif cmd == "/analyze-improvement-indodax":
         send_telegram(prefix + "Analyzing bot performance...")
         try:
             sys.path.insert(0, SCRIPT_DIR)
@@ -336,8 +341,8 @@ def handle_command(text, chat_id):
             "/portfolio-indodax - All assets & total value\n"
             "/trades-indodax - Recent trade history\n"
             "/analytics-indodax - Win rate, PnL, R/R ratio\n"
-            "/why-idle - Why bot is not trading\n"
-            "/analyze-improvement - AI analysis & suggestions\n"
+            "/why-idle-indodax - Why bot is not trading\n"
+            "/analyze-improvement-indodax - AI analysis & suggestions\n"
             "/stop-indodax - Stop bot (with confirmation)\n"
             "/start-indodax - Start bot (with confirmation)\n"
             "/help - Show this message"
