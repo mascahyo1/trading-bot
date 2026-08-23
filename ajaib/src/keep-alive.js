@@ -40,6 +40,10 @@
 const { chromium } = require('playwright');
 const fs = require('fs');
 const path = require('path');
+const captchaSolver = require('./captcha-solver');
+
+/** API key untuk 2Captcha - solve Cloudflare challenge */
+const TWO_CAPTCHA_API_KEY = process.env.TWO_CAPTCHA_API_KEY || process.env.TWO_CAPTCHA_API_KEY || '';
 
 /** Direktori penyimpanan session browser (storage-state.json). */
 const SESSION_DIR = path.join(__dirname, '..', 'session');
@@ -294,13 +298,48 @@ async function main() {
             // Cloudflare challenge: URL tetap /home tapi title berubah
             if (url.includes('login') || title.includes('Cloudflare') || title.includes('Attention Required')) {
                 log(`Cloudflare challenge (attempt ${attempt})`);
-                if (attempt >= 3) {
-                    await sendTelegram('<b>AJAIB BOT</b>\nCloudflare blocked! Run: npm run login');
+
+                // Coba solve dengan 2Captcha
+                if (captchaSolver.solver) {
+                    log('Trying 2Captcha...');
+                    const solved = await captchaSolver.solveCloudflare(page, 'https://invest.ajaib.co.id/home');
+                    if (solved) {
+                        log('Captcha solved! Checking page...');
+                        // Cek apakah sudah bisa akses
+                        const newTitle = await page.title();
+                        if (!newTitle.includes('Cloudflare') && !newTitle.includes('Attention Required')) {
+                            log('Access restored after captcha solve!');
+                            // Lanjut ke scraping di bawah
+                        } else {
+                            log('Still blocked after solve attempt');
+                            if (attempt >= 3) {
+                                await sendTelegram('<b>AJAIB BOT</b>\nCloudflare blocked! Run: npm run login');
+                            }
+                            await browser.close();
+                            continue;
+                        }
+                    } else {
+                        log('2Captcha solve failed');
+                        if (attempt >= 3) {
+                            await sendTelegram('<b>AJAIB BOT</b>\nCloudflare blocked! Run: npm run login');
+                        }
+                        await browser.close();
+                        continue;
+                    }
+                } else {
+                    // Tidak ada solver, langsung retry
+                    if (attempt >= 3) {
+                        await sendTelegram('<b>AJAIB BOT</b>\nCloudflare blocked! Run: npm run login');
+                    }
+                    await browser.close();
+                    continue;
                 }
-            } else {
-                log('Session OK');
-                // Refresh cookies supaya session tetap panjang umurnya
-                await context.storageState({ path: SESSION_FILE });
+            }
+
+            // Jika sampai di sini, berarti akses OK (langsung atau setelah solve)
+            log('Session OK');
+            // Refresh cookies supaya session tetap panjang umurnya
+            await context.storageState({ path: SESSION_FILE });
 
             // Scrape dan format laporan portfolio lengkap
             const portfolio = await getPortfolio(page);
@@ -350,14 +389,13 @@ async function main() {
             log(`Portfolio saved: cash=${portfolio.cash}, stocks=${portfolio.stocks.length}`);
             success = true;
             break;  // keluar dari loop retry karena sukses
-        }
-    } catch (e) {
-        lastError = e.message;
-        log(`Error: ${e.message}`);
-    } finally {
-        await browser.close();
-    }
-  }  // end for loop
+            } catch (e) {
+                lastError = e.message;
+                log(`Error: ${e.message}`);
+            } finally {
+                await browser.close();
+            }
+        }  // end for loop
 
   if (!success && lastError) {
     await sendTelegram(`<b>AJAIB BOT</b>\nError: ${lastError.substring(0, 200)}`);
