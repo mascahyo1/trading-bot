@@ -269,9 +269,11 @@ async function main() {
         });
 
         const url = page.url();
-        if (url.includes('login')) {
-            log('SESSION EXPIRED');
-            await sendTelegram('<b>AJAIB BOT</b>\nSession expired! Run: npm run login');
+        const title = await page.title();
+        // Cloudflare challenge: URL tetap /home tapi title berubah
+        if (url.includes('login') || title.includes('Cloudflare') || title.includes('Attention Required')) {
+            log('SESSION EXPIRED or Cloudflare challenge');
+            await sendTelegram('<b>AJAIB BOT</b>\nSession expired / Cloudflare challenge! Run: npm run login');
         } else {
             log('Session OK');
             // Refresh cookies supaya session tetap panjang umurnya

@@ -156,8 +156,13 @@ class AjaibTrader:
         await self._apply_stealth(page)
         await page.goto(f"{self.base_url}/home", wait_until="networkidle", timeout=60000)
         url = page.url
+        title = await page.title()
         await page.close()
-        return "login" not in url.lower()
+        # Cloudflare challenge: URL tetap /home tapi title berubah
+        if "login" in url.lower() or "Cloudflare" in title or "Attention Required" in title:
+            logger.error(f"Session expired or Cloudflare challenge (title={title})")
+            return False
+        return True
 
     async def get_portfolio_async(self):
         """
@@ -189,7 +194,14 @@ class AjaibTrader:
             await page.goto(f"{self.base_url}/home", wait_until="networkidle", timeout=30000)
 
             # Debug: log URL dan title untuk diagnose masalah scraping
-            logger.info(f"Ajaib page: url={page.url}, title={await page.title()}")
+            page_title = await page.title()
+            logger.info(f"Ajaib page: url={page.url}, title={page_title}")
+            if "Cloudflare" in page_title or "Attention Required" in page_title:
+                logger.error("Cloudflare challenge detected during portfolio scrape")
+                await context.storage_state(path=self.session_file)
+                await page.close()
+                await context.close()
+                return None
 
             # JavaScript dieksekusi DI DALAM browser (context halaman).
             # Perhatikan escaping \\s, \\d dsb karena string Python -> JS regex.
