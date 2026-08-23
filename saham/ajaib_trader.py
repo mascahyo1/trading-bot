@@ -111,7 +111,8 @@ class AjaibTrader:
         """
         from playwright.async_api import async_playwright
         self._playwright = await async_playwright().start()
-        self._browser = await self._playwright.chromium.launch(headless=True)
+        # Gunakan Firefox karena Cloudflare lebih sering block Chromium headless
+        self._browser = await self._playwright.firefox.launch(headless=True)
         return self._browser
 
     async def _apply_stealth(self, page):
