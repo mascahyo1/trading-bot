@@ -46,7 +46,7 @@ async function loadSession() {
 
     await page.goto('https://invest.ajaib.co.id/home', {
         waitUntil: 'networkidle',
-        timeout: 30000,
+        timeout: 60000,
     });
 
     const url = page.url();
@@ -55,6 +55,9 @@ async function loadSession() {
         await browser.close();
         process.exit(1);
     }
+
+    await context.storageState({ path: SESSION_FILE });
+    log('Session refreshed');
 
     return { browser, context, page };
 }

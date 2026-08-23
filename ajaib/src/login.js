@@ -42,13 +42,14 @@ async function login() {
     });
 
     console.log('Waiting for login to complete...');
+    console.log('(No timeout - wait until login succeeds)');
     console.log('');
 
     try {
-        await page.waitForURL('**/home', { timeout: 180000 });
+        await page.waitForURL('**/home', { timeout: 0 });
         console.log('Login berhasil!');
     } catch (e) {
-        console.log('Login timeout atau gagal. Silakan coba lagi.');
+        console.log('Login gagal atau browser ditutup.');
         await browser.close();
         process.exit(1);
     }
