@@ -252,9 +252,12 @@ class AjaibTrader:
                     return {error: e.message, cash: 0, stocks: []};
                 }
             }""")
+            # Debug: log hasil scraping untuk diagnose
+            logger.info(f"DEBUG: portfolio result = {json.dumps(portfolio, default=str)[:300]}")
 
             # Debug: log hasil scraping untuk diagnose
-            logger.info(f"Ajaib scrape result: cash={portfolio.get('cash', 0)}, stocks={len(portfolio.get('stocks', []))} items, raw_portfolio={json.dumps(portfolio, default=str)[:200]}")
+            logger.info(f"DEBUG: About to evaluate JS, page title={await page.title()}, url={page.url}")
+            portfolio = await page.evaluate("""() => {
 
             # Simpan session state terbaru supaya cookies selalu fresh
             await context.storage_state(path=self.session_file)
