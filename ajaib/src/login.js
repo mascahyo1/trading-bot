@@ -30,7 +30,7 @@ async function login() {
 
     const context = await browser.newContext({
         viewport: { width: 1280, height: 800 },
-        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36',
     });
 
     const page = await context.newPage();
@@ -42,20 +42,61 @@ async function login() {
     });
 
     console.log('Waiting for login to complete...');
-    console.log('(No timeout - wait until login succeeds)');
+    console.log('(Login di browser, script akan deteksi otomatis)');
     console.log('');
 
-    try {
-        await page.waitForURL('**/home', { timeout: 0 });
-        console.log('Login berhasil!');
-    } catch (e) {
-        console.log('Login gagal atau browser ditutup.');
+    // Tunggu sampai URL berubah DAN bukan halaman login/cloudflare
+    let loginSuccess = false;
+    let attempts = 0;
+    const maxAttempts = 120; // 2 menit max (120 x 1 detik)
+
+    while (!loginSuccess && attempts < maxAttempts) {
+        await page.waitForTimeout(1000);
+        attempts++;
+
+        const url = page.url();
+        const title = await page.title();
+
+        // Cek apakah masih di login page atau cloudflare
+        if (url.includes('login') || title.includes('Cloudflare') || title.includes('Attention Required')) {
+            process.stdout.write(`\rMenunggu login... (${attempts}s)`);
+            continue;
+        }
+
+        // Cek apakah sudah di home page Ajaib (title harus "Ajaib.co.id")
+        if (title === 'Ajaib.co.id' || url.includes('/home')) {
+            // Verifikasi dengan cek content page
+            const hasContent = await page.evaluate(() => {
+                const text = document.body.innerText;
+                return text.includes('Buying Power') || text.includes('Portofolio') || text.includes('Beranda');
+            });
+
+            if (hasContent) {
+                loginSuccess = true;
+                console.log('\nLogin berhasil! Terdeteksi di halaman home Ajaib.');
+            }
+        }
+    }
+
+    if (!loginSuccess) {
+        console.log('\nLogin gagal atau timeout (2 menit).');
         await browser.close();
         process.exit(1);
     }
 
+    // Simpan session
     await context.storageState({ path: SESSION_FILE });
     console.log('Session tersimpan di:', SESSION_FILE);
+
+    // Verifikasi session dengan test request
+    console.log('Verifikasi session...');
+    await page.goto('https://invest.ajaib.co.id/home', { waitUntil: 'networkidle', timeout: 30000 });
+    const verifyTitle = await page.title();
+    if (verifyTitle.includes('Cloudflare') || verifyTitle.includes('Attention Required')) {
+        console.log('WARNING: Session mungkin tidak valid (Cloudflare detected)');
+    } else {
+        console.log('Session valid! Title:', verifyTitle);
+    }
 
     await page.waitForTimeout(2000);
     await browser.close();
