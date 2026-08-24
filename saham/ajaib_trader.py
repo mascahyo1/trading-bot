@@ -266,10 +266,6 @@ class AjaibTrader:
 
             # Debug: log hasil scraping untuk diagnose
             logger.info(f"Ajaib scrape result: cash={portfolio.get('cash', 0)}, stocks={len(portfolio.get('stocks', []))} items")
-            # Debug: log page text jika cash=0
-            if portfolio.get('cash', 0) == 0:
-                debug_text = await page.evaluate(() => document.body.innerText.substring(0, 500))
-                logger.warning(f"DEBUG: Page text when cash=0: {repr(debug_text)}")
 
             # Simpan session state terbaru supaya cookies selalu fresh
             await context.storage_state(path=self.session_file)
