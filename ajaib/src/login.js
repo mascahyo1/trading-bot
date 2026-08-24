@@ -18,15 +18,18 @@ async function login() {
     console.log('  AJAIB TRADING BOT - LOGIN');
     console.log('========================================');
     console.log('');
-    console.log('Alur login:');
-    console.log('  1. login.ajaib.co.id/login (email/password)');
-    console.log('  2. invest.ajaib.co.id/pin (PIN)');
-    console.log('  3. invest.ajaib.co.id/home (berhasil)');
-    console.log('');
 
     const browser = await chromium.launch({
         headless: false,
-        args: ['--start-maximized'],
+        args: [
+            '--start-maximized',
+            // GPU acceleration
+            '--enable-gpu',
+            '--ignore-gpu-blocklist',
+            '--enable-accelerated-2d-canvas',
+            '--enable-accelerated-video-decode',
+            '--disable-gpu-driver-bug-workarounds',
+        ],
     });
 
     const context = await browser.newContext({
@@ -38,16 +41,14 @@ async function login() {
 
     // Step 1: Buka halaman login
     console.log('Step 1: Buka login.ajaib.co.id/login');
+    console.log('Input email/password di browser...');
     await page.goto('https://login.ajaib.co.id/login', {
         waitUntil: 'networkidle',
-        timeout: 30000,
+        timeout: 0, // no timeout
     });
 
-    console.log('Input email/password di browser...');
-    console.log('(Tunggu sampai redirect ke halaman PIN)');
-
-    // Tunggu redirect ke PIN page atau home (skip PIN)
-    await page.waitForURL(/invest\.ajaib\.co\.id\/(pin|home)/, { timeout: 120000 });
+    // Tunggu redirect ke PIN page (manual input, no timeout)
+    await page.waitForURL(/invest\.ajaib\.co\.id\/(pin|home)/, { timeout: 0 });
 
     const urlAfterLogin = page.url();
     console.log('Redirect ke:', urlAfterLogin);
@@ -56,13 +57,12 @@ async function login() {
     if (urlAfterLogin.includes('/pin')) {
         console.log('Step 2: Halaman PIN terdeteksi');
         console.log('Input PIN di browser...');
-        console.log('(Tunggu sampai redirect ke home)');
 
-        // Tunggu redirect ke home
-        await page.waitForURL('**/home', { timeout: 120000 });
+        // Tunggu redirect ke home (no timeout)
+        await page.waitForURL('https://invest.ajaib.co.id/home', { timeout: 0 });
     }
 
-    // Step 3: Verifikasi di home page
+    // Verifikasi
     const finalUrl = page.url();
     console.log('Final URL:', finalUrl);
 
@@ -72,22 +72,7 @@ async function login() {
         process.exit(1);
     }
 
-    // Verifikasi content home page
-    await page.waitForTimeout(2000);
-    const title = await page.title();
-    const hasContent = await page.evaluate(() => {
-        const text = document.body.innerText;
-        return text.includes('Buying Power') || text.includes('Portofolio') || text.includes('Beranda');
-    });
-
-    if (!hasContent) {
-        console.log('Gagal: halaman home tidak punya content yang benar');
-        console.log('Title:', title);
-        await browser.close();
-        process.exit(1);
-    }
-
-    console.log('Login berhasil! Content terverifikasi.');
+    console.log('Login berhasil!');
 
     // Simpan session
     await context.storageState({ path: SESSION_FILE });
