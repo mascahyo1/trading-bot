@@ -200,6 +200,9 @@ class AjaibTrader:
                 await context.close()
                 return None
 
+            # Tunggu konten dinamis (React) selesai render
+            await page.wait_for_timeout(3000)
+
             # JavaScript dieksekusi DI DALAM browser (context halaman).
             # Perhatikan escaping \\s, \\d dsb karena string Python -> JS regex.
             portfolio = await page.evaluate("""() => {
@@ -252,6 +255,43 @@ class AjaibTrader:
                     return {error: e.message, cash: 0, stocks: []};
                 }
             }""")
+
+            # Retry: konten dinamis kadang belum ter-render saat pertama kali scrape
+            for attempt in range(3):
+                if portfolio and (portfolio.get('cash', 0) > 0 or len(portfolio.get('stocks', [])) > 0):
+                    break
+                logger.warning(f"Scrape kosong (attempt {attempt + 1}/3), tunggu 3s dan retry...")
+                await page.wait_for_timeout(3000)
+                portfolio = await page.evaluate("""() => {
+                    const result = {cash: 0, stocks: []};
+                    const allText = document.body.innerText.replace(/\\xa0/g, ' ');
+                    const bpMatch = allText.match(/Buying Power\\s*Rp\\s*([\\d.,]+)/i);
+                    if (bpMatch) {
+                        result.cash = parseFloat(bpMatch[1].replace(/\\./g, '').replace(',', '.'));
+                    }
+                    if (result.cash === 0) {
+                        const totalInv = allText.match(/Total Investasi\\s*Rp\\s*([\\d.,]+)/i);
+                        if (totalInv) {
+                            result.cash = parseFloat(totalInv[1].replace(/\\./g, '').replace(',', '.'));
+                        }
+                    }
+                    const lines = allText.split('\\n').map(l => l.trim()).filter(l => l.length > 0);
+                    for (let i = 0; i < lines.length; i++) {
+                        if (/^[A-Z]{4}$/.test(lines[i])) {
+                            let price = 0;
+                            for (let j = i + 1; j < Math.min(i + 5, lines.length); j++) {
+                                const pm = lines[j].match(/Rp\\s*(\\d{3,}(?:[.,]\\d+)?)/);
+                                if (pm) {
+                                    price = parseFloat(pm[1].replace(/\\./g, '').replace(',', '.'));
+                                    break;
+                                }
+                            }
+                            result.stocks.push({code: lines[i], lots: 0, price: price});
+                        }
+                    }
+                    return result;
+                }""")
+
             # Debug: log hasil scraping untuk diagnose
             logger.info(f"DEBUG: portfolio result = {json.dumps(portfolio, default=str)[:300]}")
 
