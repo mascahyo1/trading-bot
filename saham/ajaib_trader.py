@@ -280,7 +280,7 @@ class AjaibTrader:
           3. Klik tombol konfirmasi
 
         Selector menggunakan fallback berlapis karena struktur HTML Ajaib
-        bisa berubah: text button → class attribute → data-testid.
+        bisa berubah: text button -> class attribute -> data-testid.
 
         PERINGATAN:
             - Order dikirim sebagai MARKET/LIMIT sesuai default form Ajaib.
