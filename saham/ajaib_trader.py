@@ -225,7 +225,7 @@ class AjaibTrader:
                 };
 
                 // Replace non-breaking space dengan spasi biasa
-                const allText = document.body.innerText.replace(/\xa0/g, ' ');
+                const allText = document.body.innerText.replace(/\\xa0/g, ' ');
 
                 // Cari Buying Power - format: "Buying Power Rp 100.000"
                 const bpMatch = allText.match(/Buying Power\\s*Rp\\s*([\\d.,]+)/i);
