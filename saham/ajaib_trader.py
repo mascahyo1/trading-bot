@@ -254,7 +254,7 @@ class AjaibTrader:
             }""")
 
             # Debug: log hasil scraping untuk diagnose
-            logger.info(f"Ajaib scrape result: cash={portfolio.get('cash', 0)}, stocks={len(portfolio.get('stocks', []))} items")
+            logger.info(f"Ajaib scrape result: cash={portfolio.get('cash', 0)}, stocks={len(portfolio.get('stocks', []))} items, raw_portfolio={json.dumps(portfolio, default=str)[:200]}")
 
             # Simpan session state terbaru supaya cookies selalu fresh
             await context.storage_state(path=self.session_file)
