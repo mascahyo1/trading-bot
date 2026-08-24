@@ -180,7 +180,7 @@ INDODAX_SYMBOL_MAP = {
 }
 
 # Selang waktu siklus trading loop (dalam detik) dan timeframe candlestick
-INTERVAL_SECONDS = 300       # 5 menit per siklus scanning
+INTERVAL_SECONDS = 1800       # 5 menit per siklus scanning
 CANDLESTICK_TIMEFRAME = "15m" # Candlestick 15 menit untuk analisis teknikal
 
 # Universe lengkap aset kripto yang dipantau

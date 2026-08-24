@@ -98,7 +98,7 @@ STOCK_CODE_MAP = {
 # ==============================================================================
 # Parameter Siklus & Data Historis
 # ==============================================================================
-INTERVAL_SECONDS = 300  # Interval siklus scanning bot (5 menit)
+INTERVAL_SECONDS = 1800  # Interval siklus scanning bot (5 menit)
 LOOKBACK_DAYS = 90      # Rentang data historis candlestick harian (90 hari)
 
 # ==============================================================================
