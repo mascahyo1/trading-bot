@@ -5,8 +5,8 @@ const path = require('path');
 const SESSION_DIR = path.join(__dirname, '..', 'session');
 const SESSION_FILE = path.join(SESSION_DIR, 'storage-state.json');
 
-// Proxy configuration from environment variable
-const PROXY_SERVER = process.env.PROXY_SERVER || null;
+// Proxy configuration - gunakan proxy di VPS
+const PROXY_SERVER = process.env.PROXY_SERVER || 'socks5://127.0.0.1:1080';
 
 async function ensureSessionDir() {
     if (!fs.existsSync(SESSION_DIR)) {
