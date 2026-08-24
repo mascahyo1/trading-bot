@@ -8,6 +8,6 @@ portfolio = trader.get_portfolio()
 if portfolio:
     print("cash:", portfolio.get("cash"))
     print("stocks:", len(portfolio.get("stocks", [])))
-    print("data:", json.dumps(portfolio, indent=2)[:1000])
+    print("data:", json.dumps(portfolio, indent=2)[:2000])
 else:
     print("None - blocked or session expired")
