@@ -104,7 +104,7 @@ class AjaibTrader:
 
     async def _init_browser(self):
         """
-        Launch Chromium headless baru dengan stealth mode & User-Agent custom
+        Launch Chromium headless baru dengan User-Agent custom
         untuk bypass Cloudflare bot detection.
 
         User-Agent di-match persis dengan browser lokal user agar Cloudflare
@@ -115,29 +115,15 @@ class AjaibTrader:
         """
         from playwright.async_api import async_playwright
         self._playwright = await async_playwright().start()
-        self._browser = await self._playwright.chromium.launch(
-            headless=True,
-            # User-Agent sama dengan browser lokal untuk hindari deteksi bot
-            args=['--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36']
-        )
+        self._browser = await self._playwright.chromium.launch(headless=True)
         return self._browser
 
     async def _apply_stealth(self, page):
         """
-        Terapkan stealth mode pada halaman untuk hindari deteksi bot oleh Cloudflare.
-
-        Memodifikasi fingerprint browser (webdriver, plugins, languages, dll)
-        agar terlihat seperti user biasa.
-
-        Args:
-            page: Halaman Playwright yang akan di-stealth-kan.
+        Stealth mode tidak diperlukan lagi - User-Agent fix sudah cukup
+        bypass Cloudflare. Biarkan method ini kosong untuk avoid detection.
         """
-        try:
-            from playwright_stealth import Stealth
-            stealth = Stealth()
-            await stealth.apply_stealth_async(page)
-        except Exception as e:
-            logger.warning(f"Stealth apply failed: {e}")
+        pass
 
     async def _close(self):
         """Tutup browser dan stop playwright instance (cleanup)."""
