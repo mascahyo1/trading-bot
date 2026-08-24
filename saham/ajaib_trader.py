@@ -224,8 +224,8 @@ class AjaibTrader:
                     totalStockValue: 0,
                 };
 
-                // Replace non-breaking space (\\u00a0) dengan spasi biasa untuk regex
-                const allText = document.body.innerText.replace(/\\u00a0/g, ' ');
+                // Replace non-breaking space dengan spasi biasa
+                const allText = document.body.innerText.replace(/\xa0/g, ' ');
 
                 // Cari Buying Power - format: "Buying Power Rp 100.000"
                 const bpMatch = allText.match(/Buying Power\\s*Rp\\s*([\\d.,]+)/i);
