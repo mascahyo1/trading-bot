@@ -255,10 +255,6 @@ class AjaibTrader:
             # Debug: log hasil scraping untuk diagnose
             logger.info(f"DEBUG: portfolio result = {json.dumps(portfolio, default=str)[:300]}")
 
-            # Debug: log hasil scraping untuk diagnose
-            logger.info(f"DEBUG: About to evaluate JS, page title={await page.title()}, url={page.url}")
-            portfolio = await page.evaluate("""() => {
-
             # Simpan session state terbaru supaya cookies selalu fresh
             await context.storage_state(path=self.session_file)
             await page.close()
