@@ -18,9 +18,10 @@ async function login() {
     console.log('  AJAIB TRADING BOT - LOGIN');
     console.log('========================================');
     console.log('');
-    console.log('Browser akan terbuka.');
-    console.log('Login manual di browser (email/password/2FA/PIN).');
-    console.log('Setelah berhasil, session akan tersimpan otomatis.');
+    console.log('Alur login:');
+    console.log('  1. login.ajaib.co.id/login (email/password)');
+    console.log('  2. invest.ajaib.co.id/pin (PIN)');
+    console.log('  3. invest.ajaib.co.id/home (berhasil)');
     console.log('');
 
     const browser = await chromium.launch({
@@ -35,72 +36,66 @@ async function login() {
 
     const page = await context.newPage();
 
-    console.log('Navigating to Ajaib login page...');
+    // Step 1: Buka halaman login
+    console.log('Step 1: Buka login.ajaib.co.id/login');
     await page.goto('https://login.ajaib.co.id/login', {
         waitUntil: 'networkidle',
         timeout: 30000,
     });
 
-    console.log('Waiting for login to complete...');
-    console.log('(Login di browser, script akan deteksi otomatis)');
-    console.log('');
+    console.log('Input email/password di browser...');
+    console.log('(Tunggu sampai redirect ke halaman PIN)');
 
-    // Tunggu sampai URL berubah DAN bukan halaman login/cloudflare
-    let loginSuccess = false;
-    let attempts = 0;
-    const maxAttempts = 120; // 2 menit max (120 x 1 detik)
+    // Tunggu redirect ke PIN page atau home (skip PIN)
+    await page.waitForURL(/invest\.ajaib\.co\.id\/(pin|home)/, { timeout: 120000 });
 
-    while (!loginSuccess && attempts < maxAttempts) {
-        await page.waitForTimeout(1000);
-        attempts++;
+    const urlAfterLogin = page.url();
+    console.log('Redirect ke:', urlAfterLogin);
 
-        const url = page.url();
-        const title = await page.title();
+    // Step 2: Jika redirect ke PIN page, input PIN
+    if (urlAfterLogin.includes('/pin')) {
+        console.log('Step 2: Halaman PIN terdeteksi');
+        console.log('Input PIN di browser...');
+        console.log('(Tunggu sampai redirect ke home)');
 
-        // Cek apakah masih di login page atau cloudflare
-        if (url.includes('login') || title.includes('Cloudflare') || title.includes('Attention Required')) {
-            process.stdout.write(`\rMenunggu login... (${attempts}s)`);
-            continue;
-        }
-
-        // Cek apakah sudah di home page Ajaib (title harus "Ajaib.co.id")
-        if (title === 'Ajaib.co.id' || url.includes('/home')) {
-            // Verifikasi dengan cek content page
-            const hasContent = await page.evaluate(() => {
-                const text = document.body.innerText;
-                return text.includes('Buying Power') || text.includes('Portofolio') || text.includes('Beranda');
-            });
-
-            if (hasContent) {
-                loginSuccess = true;
-                console.log('\nLogin berhasil! Terdeteksi di halaman home Ajaib.');
-            }
-        }
+        // Tunggu redirect ke home
+        await page.waitForURL('**/home', { timeout: 120000 });
     }
 
-    if (!loginSuccess) {
-        console.log('\nLogin gagal atau timeout (2 menit).');
+    // Step 3: Verifikasi di home page
+    const finalUrl = page.url();
+    console.log('Final URL:', finalUrl);
+
+    if (!finalUrl.includes('/home')) {
+        console.log('Gagal: tidak redirect ke home');
         await browser.close();
         process.exit(1);
     }
+
+    // Verifikasi content home page
+    await page.waitForTimeout(2000);
+    const title = await page.title();
+    const hasContent = await page.evaluate(() => {
+        const text = document.body.innerText;
+        return text.includes('Buying Power') || text.includes('Portofolio') || text.includes('Beranda');
+    });
+
+    if (!hasContent) {
+        console.log('Gagal: halaman home tidak punya content yang benar');
+        console.log('Title:', title);
+        await browser.close();
+        process.exit(1);
+    }
+
+    console.log('Login berhasil! Content terverifikasi.');
 
     // Simpan session
     await context.storageState({ path: SESSION_FILE });
     console.log('Session tersimpan di:', SESSION_FILE);
 
-    // Verifikasi session dengan test request
-    console.log('Verifikasi session...');
-    await page.goto('https://invest.ajaib.co.id/home', { waitUntil: 'networkidle', timeout: 30000 });
-    const verifyTitle = await page.title();
-    if (verifyTitle.includes('Cloudflare') || verifyTitle.includes('Attention Required')) {
-        console.log('WARNING: Session mungkin tidak valid (Cloudflare detected)');
-    } else {
-        console.log('Session valid! Title:', verifyTitle);
-    }
-
     await page.waitForTimeout(2000);
     await browser.close();
-    console.log('Selesai. Jalankan "npm start" untuk mulai trading.');
+    console.log('Selesai.');
 }
 
 login().catch(err => {
