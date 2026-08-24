@@ -217,52 +217,54 @@ class AjaibTrader:
             # JavaScript dieksekusi DI DALAM browser (context halaman).
             # Perhatikan escaping \\s, \\d dsb karena string Python -> JS regex.
             portfolio = await page.evaluate("""() => {
-                const result = {
-                    cash: 0,
-                    stocks: [],
-                    totalValue: 0,
-                    totalStockValue: 0,
-                };
+                try {
+                    const result = {
+                        cash: 0,
+                        stocks: [],
+                        totalValue: 0,
+                        totalStockValue: 0,
+                    };
 
-                // Replace non-breaking space dengan spasi biasa
-                const allText = document.body.innerText.replace(/\\xa0/g, ' ');
+                    // Replace non-breaking space dengan spasi biasa
+                    const allText = document.body.innerText.replace(/\\xa0/g, ' ');
 
-                // Cari Buying Power - format: "Buying Power Rp 100.000"
-                const bpMatch = allText.match(/Buying Power\\s*Rp\\s*([\\d.,]+)/i);
-                if (bpMatch) {
-                    result.cash = parseFloat(bpMatch[1].replace(/\\./g, '').replace(',', '.'));
-                }
-
-                // Fallback: cari "Total Investasi" atau pola Rp lain
-                if (result.cash === 0) {
-                    const totalInv = allText.match(/Total Investasi\\s*Rp\\s*([\\d.,]+)/i);
-                    if (totalInv) {
-                        result.cash = parseFloat(totalInv[1].replace(/\\./g, '').replace(',', '.'));
+                    // Cari Buying Power - format: "Buying Power Rp 100.000"
+                    const bpMatch = allText.match(/Buying Power\\s*Rp\\s*([\\d.,]+)/i);
+                    if (bpMatch) {
+                        result.cash = parseFloat(bpMatch[1].replace(/\\./g, '').replace(',', '.'));
                     }
-                }
 
-                // Scan saham dari tabel - format: KODE  Volume  Harga  Change
-                const lines = allText.split('\\n').map(l => l.trim()).filter(l => l.length > 0);
-                for (let i = 0; i < lines.length; i++) {
-                    const line = lines[i];
-                    // Kode saham 4 huruf kapital
-                    if (/^[A-Z]{4}$/.test(line)) {
-                        let lots = 0;
-                        let price = 0;
-                        // Cari harga di baris berikutnya (format: Rp xxx)
-                        for (let j = i + 1; j < Math.min(i + 5, lines.length); j++) {
-                            const priceMatch = lines[j].match(/Rp\\s*(\\d{3,}(?:[.,]\\d+)?)/);
-                            if (priceMatch) {
-                                price = parseFloat(priceMatch[1].replace(/\\./g, '').replace(',', '.'));
-                                break;
-                            }
+                    // Fallback: cari "Total Investasi" atau pola Rp lain
+                    if (result.cash === 0) {
+                        const totalInv = allText.match(/Total Investasi\\s*Rp\\s*([\\d.,]+)/i);
+                        if (totalInv) {
+                            result.cash = parseFloat(totalInv[1].replace(/\\./g, '').replace(',', '.'));
                         }
-                        // Default 0 lots jika tidak ditemukan
-                        result.stocks.push({code: line, lots: 0, price: price});
                     }
-                }
 
-                return result;
+                    // Scan saham dari tabel - format: KODE  Volume  Harga  Change
+                    const lines = allText.split('\\n').map(l => l.trim()).filter(l => l.length > 0);
+                    for (let i = 0; i < lines.length; i++) {
+                        const line = lines[i];
+                        // Kode saham 4 huruf kapital
+                        if (/^[A-Z]{4}$/.test(line)) {
+                            let price = 0;
+                            // Cari harga di baris berikutnya (format: Rp xxx)
+                            for (let j = i + 1; j < Math.min(i + 5, lines.length); j++) {
+                                const priceMatch = lines[j].match(/Rp\\s*(\\d{3,}(?:[.,]\\d+)?)/);
+                                if (priceMatch) {
+                                    price = parseFloat(priceMatch[1].replace(/\\./g, '').replace(',', '.'));
+                                    break;
+                                }
+                            }
+                            result.stocks.push({code: line, lots: 0, price: price});
+                        }
+                    }
+
+                    return result;
+                } catch (e) {
+                    return {error: e.message, cash: 0, stocks: []};
+                }
             }""")
 
             # Debug: log hasil scraping untuk diagnose
