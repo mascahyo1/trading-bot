@@ -263,37 +263,6 @@ class AjaibTrader:
 
                 return result;
             }""")
-                for (let i = 0; i < lines.length; i++) {
-                    const line = lines[i];
-                    if (/^[A-Z]{4}$/.test(line)) {
-                        const stockCode = line;
-                        let lots = 0;
-                        let price = 0;
-                        // Cari "N lot" dan harga di 10 baris setelah kode saham
-                        for (let j = i + 1; j < Math.min(i + 10, lines.length); j++) {
-                            const nextLine = lines[j];
-                            const lotMatch = nextLine.match(/(\\d+)\\s*lot/i);
-                            if (lotMatch) {
-                                lots = parseInt(lotMatch[1]);
-                            }
-                            const priceMatch = nextLine.match(/(\\d{3,}(?:[.,]\\d+)?)/);
-                            if (priceMatch) {
-                                const p = parseFloat(priceMatch[1].replace(/\\./g, '').replace(',', '.'));
-                                if (p > 100) price = p;
-                            }
-                        }
-                        if (lots > 0) {
-                            result.stocks.push({
-                                code: stockCode,
-                                lots: lots,
-                                price: price,
-                            });
-                        }
-                    }
-                }
-
-                 return result;
-            }""")
 
             # Debug: log hasil scraping untuk diagnose
             logger.info(f"Ajaib scrape result: cash={portfolio.get('cash', 0)}, stocks={len(portfolio.get('stocks', []))} items")
