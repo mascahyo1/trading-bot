@@ -21,7 +21,10 @@ import threading
 from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from config import now_jakarta, format_datetime
+from config import (
+    now_jakarta, format_datetime,
+    check_ip_change, get_public_ip, load_known_ip, save_known_ip,
+)
 
 from config import (
     TRADING_PAIRS, ALL_PAIRS, INTERVAL_SECONDS, CANDLESTICK_TIMEFRAME,
@@ -358,6 +361,18 @@ class ProductionBot:
             self.daily_pnl = 0
             self.trades_today = 0
 
+        # Cek perubahan IP publik (setiap cycle)
+        ip_changed, old_ip, new_ip = check_ip_change()
+        if ip_changed:
+            msg = (
+                f"<b>⚠️ IP BERUBAH!</b>\n"
+                f"Old: {old_ip}\n"
+                f"New: {new_ip}\n\n"
+                f"Update registered IP di Indodax API!"
+            )
+            self.logger.warning(msg)
+            self.telegram.send(msg)
+
         self.logger.info("=" * 65)
         self.logger.info(f"CYCLE #{self.cycle_count} | {format_datetime(now)}")
         self.logger.info("=" * 65)
@@ -462,6 +477,20 @@ class ProductionBot:
 
         self.telegram.notify_start(TRADING_PAIRS, CANDLESTICK_TIMEFRAME)
         self.telegram_cmd.start()
+
+        # Cek IP publik saat startup
+        changed, old_ip, new_ip = check_ip_change()
+        if new_ip:
+            self.logger.info(f"Public IP: {new_ip}")
+        if changed:
+            msg = (
+                f"<b>⚠️ IP BERUBAH!</b>\n"
+                f"Old: {old_ip}\n"
+                f"New: {new_ip}\n\n"
+                f"Update registered IP di Indodax API!"
+            )
+            self.logger.warning(msg)
+            self.telegram.send(msg)
 
         while self.running:
             try:

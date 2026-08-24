@@ -21,6 +21,11 @@ load_dotenv(os.path.join(os.path.dirname(SCRIPT_DIR), ".env"))
 TZ_JAKARTA = timezone(timedelta(hours=7))
 DATETIME_FORMAT = "%H:%M:%S %A, %d %B %Y"
 
+# IP Monitoring - deteksi perubahan IP publik
+IP_CHECK_URL = "https://ifconfig.me"
+IP_STORE_FILE = os.path.join(SCRIPT_DIR, "known_ip.txt")
+IP_CHANGE_LOG_FILE = os.path.join(SCRIPT_DIR, "ip_changes.json")
+
 
 def now_jakarta():
     """
@@ -47,9 +52,108 @@ def format_datetime(dt=None):
     return dt.strftime(DATETIME_FORMAT)
 
 
-# ------------------------------------------------------------------------------
-# Kredensial API Indodax (TAPI v2)
-# ------------------------------------------------------------------------------
+def get_public_ip():
+    """
+    Mengambil IP publik VPS dari layanan ifconfig.me.
+
+    Returns:
+        str: Alamat IP publik (contoh: '110.136.119.82') atau None jika gagal.
+    """
+    try:
+        import urllib.request
+        req = urllib.request.Request(IP_CHECK_URL, headers={"User-Agent": "curl/7.68.0"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return resp.read().decode().strip()
+    except Exception:
+        return None
+
+
+def load_known_ip():
+    """
+    Membacatatatan IP yang tersimpan dari file lokal.
+
+    Returns:
+        str: IP yang diketahui sebelumnya, atau None jika file tidak ada.
+    """
+    try:
+        if os.path.exists(IP_STORE_FILE):
+            with open(IP_STORE_FILE, "r") as f:
+                return f.read().strip()
+    except Exception:
+        pass
+    return None
+
+
+def save_known_ip(ip):
+    """
+    Menyimpan IP ke file lokal untuk tracking perubahan.
+
+    Args:
+        ip (str): Alamat IP yang akan disimpan.
+    """
+    try:
+        with open(IP_STORE_FILE, "w") as f:
+            f.write(ip)
+    except Exception:
+        pass
+
+
+def log_ip_change(old_ip, new_ip):
+    """
+    Mencatat perubahan IP ke file JSON untuk audit trail.
+
+    Args:
+        old_ip (str): IP sebelumnya.
+        new_ip (str): IP baru.
+    """
+    import json
+    changes = []
+    try:
+        if os.path.exists(IP_CHANGE_LOG_FILE):
+            with open(IP_CHANGE_LOG_FILE, "r") as f:
+                changes = json.load(f)
+    except Exception:
+        pass
+
+    changes.append({
+        "timestamp": now_jakarta().isoformat(),
+        "old_ip": old_ip,
+        "new_ip": new_ip,
+    })
+
+    try:
+        with open(IP_CHANGE_LOG_FILE, "w") as f:
+            json.dump(changes, f, indent=2)
+    except Exception:
+        pass
+
+
+def check_ip_change():
+    """
+    Memeriksa apakah IP publik VPS berubah dari yang tercatat.
+
+    Returns:
+        tuple: (changed: bool, old_ip: str, new_ip: str)
+               changed True jika IP berubah, False jika sama atau gagal cek.
+    """
+    current_ip = get_public_ip()
+    if not current_ip:
+        return False, None, None
+
+    known_ip = load_known_ip()
+
+    if known_ip is None:
+        # Pertama kali jalan, simpan IP
+        save_known_ip(current_ip)
+        return False, None, current_ip
+
+    if current_ip != known_ip:
+        # IP berubah!
+        log_ip_change(known_ip, current_ip)
+        save_known_ip(current_ip)
+        return True, known_ip, current_ip
+
+    return False, known_ip, current_ip
 INDODAX_API_KEY = os.getenv("indodax_api_key", "")
 INDODAX_API_SECRET = os.getenv("indodax_api_secret", "")
 
