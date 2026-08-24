@@ -346,8 +346,43 @@ async function main() {
             // Refresh cookies supaya session tetap panjang umurnya
             await context.storageState({ path: SESSION_FILE });
 
-            // Scrape dan format laporan portfolio lengkap
-            const portfolio = await getPortfolio(page);
+            // Scrape portfolio dari text content
+            const portfolio = await page.evaluate(() => {
+                const data = { cash: 0, stocks: [], totalValue: 0 };
+                const allText = document.body.innerText;
+
+                // Cari Buying Power - format: "Buying Power Rp 100.000"
+                const bpMatch = allText.match(/Buying Power\s*Rp\s*([\d.,]+)/i);
+                if (bpMatch) {
+                    data.cash = parseFloat(bpMatch[1].replace(/\./g, '').replace(',', '.'));
+                }
+
+                // Fallback: Total Investasi
+                if (data.cash === 0) {
+                    const totalInv = allText.match(/Total Investasi\s*Rp\s*([\d.,]+)/i);
+                    if (totalInv) {
+                        data.cash = parseFloat(totalInv[1].replace(/\./g, '').replace(',', '.'));
+                    }
+                }
+
+                // Scan saham dari tabel
+                const lines = allText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+                for (let i = 0; i < lines.length; i++) {
+                    if (/^[A-Z]{4}$/.test(lines[i])) {
+                        let price = 0;
+                        for (let j = i + 1; j < Math.min(i + 5, lines.length); j++) {
+                            const priceMatch = lines[j].match(/Rp\s*(\d{3,}(?:[.,]\d+)?)/);
+                            if (priceMatch) {
+                                price = parseFloat(priceMatch[1].replace(/\./g, '').replace(',', '.'));
+                                break;
+                            }
+                        }
+                        data.stocks.push({ code: lines[i], lots: 0, price });
+                    }
+                }
+
+                return data;
+            });
 
             const now = formatJakartaTime(new Date());
             const lines = [

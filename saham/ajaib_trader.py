@@ -224,43 +224,45 @@ class AjaibTrader:
                     totalStockValue: 0,
                 };
 
-                // PRIORITAS 1: Cari elemen "Buying Power" - paling reliable
-                const bpElement = Array.from(
-                    document.querySelectorAll('span.text-body-regular.text-white')
-                ).find(el => el.textContent.includes('Buying Power'));
-                if (bpElement) {
-                    const nominalSpan = bpElement.querySelector('span');
-                    if (nominalSpan) {
-                        // Format: "Rp 100.000" -> hapus "Rp " & titik ribuan
-                        const raw = nominalSpan.innerText.replace(/Rp\\s*/i, '').replace(/\\./g, '').replace(',', '.');
-                        result.cash = parseFloat(raw) || 0;
+                const allText = document.body.innerText;
+
+                // Cari Buying Power - format: "Buying Power Rp 100.000"
+                const bpMatch = allText.match(/Buying Power\\s*Rp\\s*([\\d.,]+)/i);
+                if (bpMatch) {
+                    result.cash = parseFloat(bpMatch[1].replace(/\\./g, '').replace(',', '.'));
+                }
+
+                // Fallback: cari "Total Investasi" atau pola Rp lain
+                if (result.cash === 0) {
+                    const totalInv = allText.match(/Total Investasi\\s*Rp\\s*([\\d.,]+)/i);
+                    if (totalInv) {
+                        result.cash = parseFloat(totalInv[1].replace(/\\./g, '').replace(',', '.'));
                     }
                 }
 
-                // FALLBACK: pola regex lama jika selector utama tidak ditemukan
-                if (result.cash === 0) {
-                    const allText = document.body.innerText;
-                    const cashPatterns = [
-                        /Saldo[^:]*:?\\s*Rp?\\s*([\\d.,]+)/i,
-                        /Cash[^:]*:?\\s*Rp?\\s*([\\d.,]+)/i,
-                        /Dana[^:]*:?\\s*Rp?\\s*([\\d.,]+)/i,
-                        /Rp\\s*([\\d.,]{4,})/,
-                    ];
-                    for (const pattern of cashPatterns) {
-                        const match = allText.match(pattern);
-                        if (match) {
-                            const raw = match[1].replace(/\\./g, '').replace(',', '.');
-                            const val = parseFloat(raw);
-                            if (val > 1000) {
-                                result.cash = val;
+                // Scan saham dari tabel - format: KODE  Volume  Harga  Change
+                const lines = allText.split('\\n').map(l => l.trim()).filter(l => l.length > 0);
+                for (let i = 0; i < lines.length; i++) {
+                    const line = lines[i];
+                    // Kode saham 4 huruf kapital
+                    if (/^[A-Z]{4}$/.test(line)) {
+                        let lots = 0;
+                        let price = 0;
+                        // Cari harga di baris berikutnya (format: Rp xxx)
+                        for (let j = i + 1; j < Math.min(i + 5, lines.length); j++) {
+                            const priceMatch = lines[j].match(/Rp\\s*(\\d{3,}(?:[.,]\\d+)?)/);
+                            if (priceMatch) {
+                                price = parseFloat(priceMatch[1].replace(/\\./g, '').replace(',', '.'));
                                 break;
                             }
                         }
+                        // Default 0 lots jika tidak ditemukan
+                        result.stocks.push({code: line, lots: 0, price: price});
                     }
                 }
 
-                // Scan saham: cari kode 4 huruf kapital + lot + harga
-                const lines = document.body.innerText.split('\\n').map(l => l.trim()).filter(l => l.length > 0);
+                return result;
+            }""")
                 for (let i = 0; i < lines.length; i++) {
                     const line = lines[i];
                     if (/^[A-Z]{4}$/.test(line)) {
