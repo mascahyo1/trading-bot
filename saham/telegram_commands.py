@@ -194,6 +194,28 @@ def get_status_text():
 
         total_stock_value = sum(d["value"] for d in position_details.values())
         cash = getattr(BOT_INSTANCE, '_last_cash', 0)
+        # Fallback: _last_cash 0 setelah restart -> baca portfolio.json yang akurat
+        if not cash or cash==0:
+            try:
+                import json as _js, os as _os
+                for _pf in [_os.path.expanduser("~/trading-bot/ajaib/session/portfolio.json"), _os.path.join(_os.path.dirname(__file__),"..","ajaib","session","portfolio.json"), _os.path.join(_os.path.dirname(__file__),"ajaib","session","portfolio.json")]:
+                    if _os.path.exists(_pf):
+                        try:
+                            _dd=json.load(open(_pf))
+                            _cc=_dd.get("cash",0)
+                            if _cc: cash=_cc; BOT_INSTANCE._last_cash=_cc; break
+                        except Exception: pass
+            except Exception: pass
+        # Jika masih ada holdings PADI tapi total_stock_value 0 karena exchange belum fetch, fallback ke total dari portfolio.json
+        if total_stock_value==0 and cash:
+            try:
+                import json as _js2, os as _os2
+                _pf2=_os2.path.expanduser("~/trading-bot/ajaib/session/portfolio.json")
+                if _os2.path.exists(_pf2):
+                    _d2=json.load(open(_pf2))
+                    _tv=_d2.get("totalStockValue",0)
+                    if _tv: total_stock_value=_tv
+            except Exception: pass
         grand_total = cash + total_stock_value
 
         sign = "+" if total_pnl >= 0 else ""

@@ -23,8 +23,8 @@ from config import LLM_BASE_URL, LLM_API_KEY, LLM_MODEL
 
 logger = logging.getLogger(__name__)
 
-MAX_RETRIES = 3
-BASE_TIMEOUT = 15
+MAX_RETRIES = 2  # Maksimal percobaan ulang LLM
+BASE_TIMEOUT = 15  # Timeout LLM 15s (dulu 8s sering skip timeout)
 
 
 def retry_with_backoff(func):
@@ -59,10 +59,10 @@ def retry_with_backoff(func):
             except (urllib.error.URLError, socket.timeout, TimeoutError, ConnectionError) as e:
                 wait = (2 ** attempt) * 2
                 if attempt < MAX_RETRIES - 1:
-                    logger.warning(f"Retry {attempt + 1}/{MAX_RETRIES} after {wait}s: {str(e)[:80]}")
+                    logger.debug(f"LLM retry {attempt + 1}/{MAX_RETRIES} after {wait}s: {str(e)[:80]}")
                     time.sleep(wait)
                 else:
-                    logger.error(f"Failed after {MAX_RETRIES} retries: {str(e)[:80]}")
+                    logger.info(f"LLM skip after {MAX_RETRIES} retries: {str(e)[:60]}")
                     return None
             except urllib.error.HTTPError as e:
                 logger.error(f"LLM API HTTP {e.code}: {str(e)[:80]}")

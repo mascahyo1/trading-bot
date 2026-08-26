@@ -27,21 +27,29 @@ logger = logging.getLogger(__name__)
 
 class StockExchange:
     """
-    Wrapper class untuk yfinance (saham Indonesia).
-    
+    Wrapper untuk Yahoo Finance (yfinance) khusus saham Indonesia (.JK).
+
+    Menyediakan pengambilan data OHLCV, harga real-time, data intraday,
+    dan nama emiten dengan cache berbasis TTL agar hemat request API.
+
     Attributes:
-        _cache (dict): Cache untuk menyimpan data OHLCV
-        _cache_ttl (int): Cache time-to-live dalam detik
+        _cache (dict): Cache internal (cache_key -> (timestamp, data)).
+        _cache_ttl (int): Durasi cache dalam detik (default 60 detik).
     """
 
     def __init__(self):
-        """Initialize exchange dengan cache kosong."""
+        """
+        Inisialisasi StockExchange dengan cache kosong dan TTL 60 detik.
+
+        Cache menyimpan hasil fetch_ohlcv agar request berulang dalam
+        60 detik tidak memukul Yahoo Finance lagi.
+        """
         self._cache = {}
         self._cache_ttl = 60
 
     def fetch_ohlcv(self, symbol, period=None, interval="1d"):
         """
-        Fetch OHLCV data untuk satu saham.
+        Mengambil data OHLCV (Open-High-Low-Close-Volume) untuk satu saham.
         
         Args:
             symbol (str): Kode saham (mis. "BBCA.JK")
@@ -49,7 +57,8 @@ class StockExchange:
             interval (str): Interval candle ("1d", "1h", "5m")
             
         Returns:
-            list: List of [timestamp, open, high, low, close, volume] atau None
+            list | None: Daftar baris [timestamp_ms, open, high, low, close, volume]
+                atau None jika data kosong / error. Timestamp dalam milidetik.
         """
         if period is None:
             period = f"{LOOKBACK_DAYS}d"

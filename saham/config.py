@@ -9,9 +9,9 @@ Menyimpan seluruh konstanta konfigurasi:
 - Aturan lot bursa (1 Lot = 100 Lembar) dan ukuran posisi per transaksi (Rp 1.000.000).
 - Pembobotan sinyal: 70% Analisis Teknikal + 30% AI LLM.
 - Perhitungan struktur fee transaksi Ajaib Sekuritas:
-  * Beli: Total 0.14% (Broker 0.10% + Kliring/BEI 0.02% + Biaya Pajak 0.02%)
-  * Jual: Total 0.34% (Broker 0.10% + Kliring/BEI 0.02% + Pajak 0.02% + PPN 0.10% + PPh Final 0.10%)
-  * Round-trip fee: ~0.48%
+  * Beli: Total 0.1513% (broker 0.10% + levy 0.0433% + PPN 12% broker, PMK 131/2024)
+  * Jual: Total 0.2513% (beli 0.1513% + PPh Final 0.10%)
+  * Round-trip fee: ~0.4026%
 
 Author: AI Trading Bot
 """
@@ -77,11 +77,18 @@ TRADING_STOCKS = [
 ]
 
 # Saham semesta pemindaian pasar lengkap (Universe of Stocks)
+# Saham murah terjangkau untuk modal kecil (price < 1000 => lot < 100rb)
+AFFORDABLE_STOCKS = [
+    "KLBF.JK", "ADHI.JK", "BUMI.JK", "BRMS.JK", "DEWA.JK",
+    "BRPT.JK", "GOTO.JK", "PADI.JK", "BBRI.JK", "PGAS.JK", "ANTM.JK",
+]
+
 ALL_STOCKS = [
     "BBCA.JK", "BMRI.JK", "BBRI.JK", "TLKM.JK", "ASII.JK",
     "UNVR.JK", "INDF.JK", "KLBF.JK", "ICBP.JK", "ANTM.JK",
     "INCO.JK", "PGAS.JK", "PTBA.JK", "SMGR.JK", "ADHI.JK",
     "INTP.JK", "EXCL.JK", "ISAT.JK", "JSMR.JK", "CPIN.JK",
+    "BUMI.JK", "BRMS.JK", "DEWA.JK", "BRPT.JK", "GOTO.JK", "PADI.JK",
 ]
 
 # Pemetaan dari simbol Yahoo Finance (*.JK) ke kode ticker murni di platform Ajaib Sekuritas
@@ -126,22 +133,25 @@ TRADE_HISTORY_FILE = "trade_history.json"
 # ==============================================================================
 # Struktur Fee Transaksi Saham Ajaib Sekuritas
 # ==============================================================================
-# Biaya Transaksi Pembelian:
-BUY_BROKER_FEE_PCT = 0.0010     # Broker fee beli (0.10%)
-BUY_CLEARENCE_FEE_PCT = 0.0002  # BEI / KPEI / KSEI levy (0.02%)
-BUY_TAX_FEE_PCT = 0.0002        # Pajak transaksi beli (0.02%)
-BUY_TOTAL_FEE_PCT = BUY_BROKER_FEE_PCT + BUY_CLEARENCE_FEE_PCT + BUY_TAX_FEE_PCT # Total Beli: ~0.14%
+# Biaya Transaksi - ATURAN TERBARU (ajaib.co.id/biaya, PMK 131/2024 per 1 Jan 2025)
+# Beli 0.1513% | Jual 0.2513% | Round-trip 0.4026%
+# Rincian: broker 0.10% + levy BEI/KPEI/KSEI 0.0433% + PPN broker 12% + PPh final jual 0.10% (hanya jual)
+# Beli = 0.10*1.12 + 0.0433 = 0.1553%? Tapi Ajaib publish 0.1513% (sudah final), pakai angka publish.
+# Jual = beli + PPh 0.10% = 0.2513%
+BUY_TOTAL_FEE_PCT = 0.001513   # Total beli 0.1513% (sudah termasuk levy + PPN 12% broker)
+SELL_TOTAL_FEE_PCT = 0.002513  # Total jual 0.2513% (beli + PPh final 0.10%)
+# Komponen derivasi untuk display (tidak dipakai hitung, hanya info)
+BUY_BROKER_FEE_PCT = 0.0010
+SELL_BROKER_FEE_PCT = 0.0010
+BUY_CLEARENCE_FEE_PCT = 0.000433  # levy 0.0433%
+SELL_CLEARENCE_FEE_PCT = 0.000433
+BUY_TAX_FEE_PCT = 0.00008   # sisa PPN (approx, angka final pakai TOTAL di atas)
+SELL_TAX_FEE_PCT = 0.00008
+SELL_VAT_FEE_PCT = 0.00012  # PPN 12% dari broker
+SELL_PPH_FEE_PCT = 0.001
 
-# Biaya Transaksi Penjualan:
-SELL_BROKER_FEE_PCT = 0.0010    # Broker fee jual (0.10%)
-SELL_CLEARENCE_FEE_PCT = 0.0002 # BEI / KPEI / KSEI levy (0.02%)
-SELL_TAX_FEE_PCT = 0.0002       # Pajak reguler jual (0.02%)
-SELL_VAT_FEE_PCT = 0.001        # PPN transaksi jual (0.10%)
-SELL_PPH_FEE_PCT = 0.001        # PPh Final penjualan saham (0.10%)
-SELL_TOTAL_FEE_PCT = SELL_BROKER_FEE_PCT + SELL_CLEARENCE_FEE_PCT + SELL_TAX_FEE_PCT + SELL_VAT_FEE_PCT + SELL_PPH_FEE_PCT # Total Jual: ~0.34%
-
-# Total biaya bolak-balik (Round-trip fee beli + jual): ~0.48%
-ROUND_TRIP_FEE_PCT = BUY_TOTAL_FEE_PCT + SELL_TOTAL_FEE_PCT
+# Total bolak-balik 0.4026%
+ROUND_TRIP_FEE_PCT = 0.004026  # 0.1513 + 0.2513
 
 FEE_WARNING_THRESHOLD_PCT = 0.5 # Ambang batas peringatan jika fee memakan profit
 
@@ -150,5 +160,8 @@ FEE_WARNING_THRESHOLD_PCT = 0.5 # Ambang batas peringatan jika fee memakan profi
 # ==============================================================================
 AJAIB_SESSION_DIR = os.path.join(os.path.dirname(SCRIPT_DIR), "ajaib", "session")
 AJAIB_SESSION_FILE = os.path.join(AJAIB_SESSION_DIR, "storage-state.json")
+AJAIB_PERSISTENT_PROFILE = os.path.join(os.path.dirname(SCRIPT_DIR), "ajaib", "persistent-profile")
 AJAIB_BASE_URL = "https://invest.ajaib.co.id"
+AJAIB_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36"
+AJAIB_PROXY = os.getenv("AJAIB_PROXY", "")  # socks5://127.0.0.1:1080 jika via tunnel
 

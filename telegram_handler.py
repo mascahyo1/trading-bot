@@ -410,6 +410,21 @@ def get_saham_status():
         str: Pesan terformat HTML status saldo kas, open positions, Net PnL, dan biaya fee.
     """
     state = read_saham_state()
+    # Fallback: saham_state.json cash 0 after restart -> baca portfolio.json yang akurat
+    try:
+        _cs = state.get("cash",0) if isinstance(state, dict) else 0
+        if (not _cs or _cs==0) and isinstance(state, dict):
+            import json as _js2
+            for _pf in [os.path.expanduser("~/trading-bot/ajaib/session/portfolio.json"), os.path.join(os.path.dirname(__file__),"..","ajaib","session","portfolio.json"), os.path.join(os.path.dirname(__file__),"ajaib","session","portfolio.json")]:
+                if os.path.exists(_pf):
+                    try:
+                        _dd=json.load(open(_pf))
+                        _cc=_dd.get("cash",0)
+                        if _cc: state["cash"]=_cc; break
+                    except Exception:
+                        pass
+    except Exception:
+        pass
     if not state:
         return "<b>SAHAM</b>\nBot tidak jalan atau state belum tersedia."
     analytics = state.get("analytics", {})
@@ -477,13 +492,15 @@ def get_saham_portfolio():
     state = read_saham_state()
     if not state:
         return "<b>SAHAM</b>\nBot tidak jalan atau state belum tersedia."
+    _fb_cash = state.get("cash", 0)
+    _fb_stocks = (state.get("portfolio") or {}).get("stocks", [])
     lines = [
         "<b>SAHAM PORTFOLIO</b>",
         "",
-        f"<b>CASH: {cash:,.0f} IDR</b>",
+        f"<b>CASH: {_fb_cash:,.0f} IDR</b>",
         "",
     ]
-    if stocks:
+    if _fb_stocks:
         lines.append("<b>PER SAHAM:</b>")
         lines.append("")
         total_value = 0
@@ -498,9 +515,11 @@ def get_saham_portfolio():
             lines.append(f"   Harga: {price:,.0f} IDR")
             lines.append(f"   <b>Total: {value:,.0f} IDR</b>")
             lines.append("")
+        else:
+            total_value = 0
     lines.append(f"<b>Total Saham: {total_value:,.0f} IDR</b>")
-    lines.append(f"<b>Cash: {cash:,.0f} IDR</b>")
-    lines.append(f"<b>GRAND TOTAL: {cash + total_value:,.0f} IDR</b>")
+    lines.append(f"<b>Cash: {_fb_cash:,.0f} IDR</b>")
+    lines.append(f"<b>GRAND TOTAL: {_fb_cash + total_value:,.0f} IDR</b>")
     return "\n".join(lines)
 
 

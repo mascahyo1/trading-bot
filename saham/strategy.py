@@ -23,6 +23,11 @@ Fitur:
 
 Author: AI Trading Bot
 """
+"""
+Strategy Saham - Lot BEI & Risk
+1 lot=100 lembar, fee 0.1513/0.2513 PMK131/2024 net, mode 100rb, ATR filter, RSI 65 (longgar).
+"""
+
 
 import json
 import os
@@ -353,21 +358,36 @@ class RiskManager:
         cash = portfolio.get("cash", 0)
         stocks = portfolio.get("stocks", [])
 
-        for stock_text in stocks:
+        for stock_data in stocks:
             try:
-                lines = stock_text.strip().split("\n")
-                if len(lines) >= 2:
+                # Format baru: list of dict {code, lots, price} (dari page.evaluate)
+                if isinstance(stock_data, dict):
+                    code = str(stock_data.get("code", "")).strip()
+                    lots = int(stock_data.get("lots", 0) or 0)
+                else:
+                    # Format lama: string multi-baris "CODE\n...N lot..."
+                    lines = str(stock_data).strip().split("\n")
+                    if len(lines) < 2:
+                        continue
                     code = lines[0].strip()
-                    symbol = f"{code}.JK"
+                    lots = 0
                     for line in lines:
                         if "lot" in line.lower():
-                            lots = int("".join(filter(str.isdigit, line)))
-                            if symbol not in self.positions or self.positions[symbol].status != "open":
-                                ticker = exchange.fetch_ticker(symbol)
-                                if ticker and ticker.get("last"):
-                                    entry_price = ticker["last"]
-                                    self.positions[symbol] = Position(symbol, entry_price, lots, code)
-                                    logger.info(f"Loaded position: {symbol} lots={lots} entry={entry_price:,.0f}")
+                            import re as _re
+                            m = _re.search(r"(\d+)\s*lot", line, _re.IGNORECASE)
+                            if m:
+                                lots = int(m.group(1))
+
+                if lots <= 0 or not code:
+                    continue
+
+                symbol = f"{code}.JK"
+                if symbol not in self.positions or self.positions[symbol].status != "open":
+                    ticker = exchange.fetch_ticker(symbol)
+                    if ticker and ticker.get("last"):
+                        entry_price = ticker["last"]
+                        self.positions[symbol] = Position(symbol, entry_price, lots, code)
+                        logger.info(f"Loaded position: {symbol} lots={lots} entry={entry_price:,.0f}")
             except Exception as e:
                 logger.warning(f"Error parsing stock: {e}")
 
@@ -437,6 +457,16 @@ class RiskManager:
         Returns:
             int: Jumlah lot yang disarankan.
         """
+        # Kalau balance kecil (mis 100rb), tetap boleh beli 1 lot saham murah
+        # Jangan pakai risk 2% yang bikin position_value jadi 2rb (tidak bisa beli apa-apa)
+        if balance <= 200000:
+            # mode modal kecil: pakai 90% cash untuk 1 lot kalau muat
+            cost_per_lot = LOT_SIZE * current_price * (1 + BUY_TOTAL_FEE_PCT)
+            if balance >= cost_per_lot and balance >= MIN_ORDER_IDR:
+                lots = int((balance * 0.90) // cost_per_lot)
+                return max(1, lots) if lots >= 1 else 0
+            return 0
+
         if is_primary:
             risk_amount = balance * RISK_PER_TRADE
         else:
@@ -469,6 +499,25 @@ class RiskManager:
             Position: Objek posisi yang baru dibuat.
         """
         position = Position(symbol, entry_price, lots, code)
+        existing = self.positions.get(symbol)
+        if existing and existing.status == "open":
+            # DCA / top-up: gabungkan ke posisi lama (weighted average),
+            # JANGAN timpa karena SL/TP/trailing/highwater akan hilang.
+            total_lots = existing.lots + lots
+            existing.entry_price_market = (
+                (existing.entry_price_market * existing.lots + entry_price * lots) / total_lots
+            )
+            existing.entry_price = (
+                (existing.entry_price * existing.lots + entry_price * (1 + BUY_TOTAL_FEE_PCT) * lots) / total_lots
+            )
+            existing.lots = total_lots
+            existing.shares = total_lots * LOT_SIZE
+            existing.break_even_price = existing.entry_price * (1 + SELL_TOTAL_FEE_PCT)
+            logger.info(
+                f"Position topped up (DCA): {symbol} +{lots} lots -> {total_lots} lots, "
+                f"avg entry={existing.entry_price:,.0f}"
+            )
+            return existing
         self.positions[symbol] = position
         logger.info(
             f"Position opened: {symbol} entry={entry_price:,.0f} lots={lots} "
@@ -685,7 +734,7 @@ class TradingStrategy:
         self.risk_manager = risk_manager
         self.min_confidence = 0.70
         self.rsi_overbought = 70
-        self.rsi_entry_max = 40
+        self.rsi_entry_max = 65  # dilonggarkan (dulu 50 keblock semua, 65 boleh momentum wajar)
         self.min_risk_reward = 2.0
         self.min_win_rate = 40.0
 
@@ -702,7 +751,7 @@ class TradingStrategy:
            - Cek DCA (-3% atau -6%) -> action 'buy' (averaging down).
            - Smart exit: RSI > 70 atau RSI > 65 dengan MACD bearish -> action 'close'.
         2. Jika sinyal BUY baru terdeteksi:
-           - Validasi RSI <= 40 (tidak membeli di pucuk).
+           - Validasi RSI <= 65 (tidak membeli di overbought).
            - Validasi Win Rate >= 40% (setelah minimal 5 trade).
            - Validasi Risk/Reward >= 2.0.
            - Validasi ketersediaan saldo dan kuota posisi terbuka.
@@ -843,7 +892,9 @@ class TradingStrategy:
                 logger.info(f"[{symbol}] Skip buy: R/R {rr_ratio:.1f} < {self.min_risk_reward}")
                 return {"action": "hold", "reason": "poor_risk_reward", "analysis": analysis}
 
-            min_order = MIN_ORDER_IDR * 1.5
+            # mode 100rb: biaya aktual 1 lot saja, bukan 1.5x MIN_ORDER (112.5rb) yang keblock KLBF 80rb
+            cost_one_lot = LOT_SIZE * current_price * (1 + BUY_TOTAL_FEE_PCT)
+            min_order = cost_one_lot
             can_afford = balance >= min_order
 
             if not can_afford:

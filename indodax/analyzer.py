@@ -18,6 +18,8 @@ Hybrid Scoring:
 
 Author: AI Trading Bot
 """
+# Catatan: ATR/close <0.4% => score*0.85 (pasar sepi). Bobot 60% teknikal 40% LLM.
+
 
 import numpy as np
 import pandas as pd
@@ -384,11 +386,24 @@ class MarketAnalyzer:
         else:
             sell_score += bb_score * self.signal_weights["bollinger"]
 
+        # Volume: konfirmasi hanya jika ada arah jelas, tapi jangan hilangkan sinyal lemah sepenuhnya
         if vol_signal in ("strong", "above_avg"):
             if buy_score > sell_score:
                 buy_score += vol_score * self.signal_weights["volume"]
             elif sell_score > buy_score:
                 sell_score += vol_score * self.signal_weights["volume"]
+
+        # ATR: gunakan sebagai filter volatilitas, bukan skor arah
+        # Jika ATR sangat rendah (< 0.3 * median ATR 14), pasar sideways -> turunkan confidence
+        try:
+            atr_val = float(indicators.get("atr", 0) or 0)
+            close_val = float(df["close"].iloc[-1] or 0)
+            # ATR% = atr/close ; <0.4% = sangat sepi
+            if close_val > 0 and atr_val > 0 and (atr_val / close_val) < 0.004:
+                buy_score *= 0.85
+                sell_score *= 0.85
+        except Exception:
+            pass
 
         total_score = buy_score + sell_score
         if total_score == 0:
@@ -529,11 +544,24 @@ class MarketAnalyzer:
         else:
             sell_score += bb_score * self.signal_weights["bollinger"]
 
+        # Volume: konfirmasi hanya jika ada arah jelas, tapi jangan hilangkan sinyal lemah sepenuhnya
         if vol_signal in ("strong", "above_avg"):
             if buy_score > sell_score:
                 buy_score += vol_score * self.signal_weights["volume"]
             elif sell_score > buy_score:
                 sell_score += vol_score * self.signal_weights["volume"]
+
+        # ATR: gunakan sebagai filter volatilitas, bukan skor arah
+        # Jika ATR sangat rendah (< 0.3 * median ATR 14), pasar sideways -> turunkan confidence
+        try:
+            atr_val = float(indicators.get("atr", 0) or 0)
+            close_val = float(df["close"].iloc[-1] or 0)
+            # ATR% = atr/close ; <0.4% = sangat sepi
+            if close_val > 0 and atr_val > 0 and (atr_val / close_val) < 0.004:
+                buy_score *= 0.85
+                sell_score *= 0.85
+        except Exception:
+            pass
 
         total_score = buy_score + sell_score
         if total_score == 0:

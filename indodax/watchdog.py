@@ -149,7 +149,7 @@ def check_bot_health():
     else:
         mod_time = os.path.getmtime(BOT_LOG)
         age_seconds = time.time() - mod_time
-        if age_seconds > 1200:
+        if age_seconds > 2400:  # 40 menit (cycle 30m + buffer)
             errors.append(f"Log tidak update {age_seconds/60:.0f} min")
     result = os.popen("pgrep -f 'indodax/bot.py'").read().strip()
     if not result:
@@ -165,7 +165,8 @@ def main():
     errors = check_bot_health()
 
     if errors:
-        msg = "🏦 <b>INDODAX</b>\n🔴 <b>BOT DOWN!</b>\n" + "\n".join(f"• {e}" for e in errors)
+        ts = format_datetime()
+        msg = f"🏦 <b>INDODAX</b>\n🔴 <b>BOT DOWN!</b>\n{ts}\n" + "\n".join(f"• {e}" for e in errors)
         send_telegram(msg)
         print(f"ALERT: {errors}")
         return

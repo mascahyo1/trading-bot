@@ -20,6 +20,8 @@ API Endpoints:
 
 Author: AI Trading Bot
 """
+# Catatan: HMAC v2, retry 3x exponential backoff, CCXT untuk fetch_ohlcv/ticker.
+
 
 import hashlib
 import hmac
@@ -35,16 +37,23 @@ from config import INDODAX_API_KEY, INDODAX_API_SECRET
 
 logger = logging.getLogger(__name__)
 
-BASE_URL = "https://api.indodax.com"
-MAX_RETRIES = 3
+BASE_URL = "https://api.indodax.com"  # Base URL Trade API Indodax v2
+MAX_RETRIES = 3  # Maksimal percobaan ulang untuk api_retry
 
 
 def api_retry(func):
     """
-    Decorator untuk automatic retry pada API calls.
-    
-    Retry strategy: Exponential backoff (2s, 4s, 8s)
-    Max retries: 3 times
+    Decorator untuk mengulang otomatis panggilan API Indodax saat error jaringan.
+
+    Menangani error jaringan (URLError, timeout, ConnectionError) dengan strategi
+    exponential backoff 2s, 4s, 8s hingga maksimal 3 percobaan. Error non-jaringan
+    langsung dikembalikan sebagai dict error tanpa retry.
+
+    Args:
+        func (callable): Fungsi API yang akan dibungkus (mis. _v2_request, fetch_ticker).
+
+    Returns:
+        callable: Wrapper function yang mengembalikan hasil func atau dict {error: True}.
     """
     def wrapper(*args, **kwargs):
         """
@@ -83,7 +92,12 @@ class IndodaxExchange:
     """
 
     def __init__(self):
-        """Initialize exchange dengan API credentials."""
+        """
+        Inisialisasi koneksi exchange Indodax dengan kredensial API.
+
+        Memuat API key/secret dari config, lalu membuat instance CCXT
+        Indodax dengan rate-limit aktif. Tidak menerima parameter.
+        """
         self.api_key = INDODAX_API_KEY
         self.secret_key = INDODAX_API_SECRET
         self.ccxt = ccxt.indodax({

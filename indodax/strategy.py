@@ -17,16 +17,22 @@ Fitur:
 
 Author: AI Trading Bot
 """
+# Catatan: Fee 0.3%+0.3% net, SL 3% TP 6% trailing 5%, DCA -3/-6%, partial 50% TP1.
+# Dust helper, win-rate gate relaxed (hard block hanya n>=10), position sizing clamp.
+
 
 import json
 import os
 import logging
 from datetime import datetime
 from config import (
+    # fee Indodax 0.3% buy + 0.3% sell (0.6% roundtrip)
+
     RISK_PER_TRADE,
     STOP_LOSS_PCT,
     TAKE_PROFIT_PCT,
     MAX_OPEN_POSITIONS,
+    MIN_ORDER_IDR,
     POSITION_SIZE_USDT,
     MIN_ORDER_IDR,
     TRADE_HISTORY_FILE,
@@ -39,6 +45,10 @@ from config import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Indodax fee (flat 0.3% taker, belum ada tier)
+INDODAX_BUY_FEE = 0.003
+INDODAX_SELL_FEE = 0.003
 
 
 class Position:
@@ -69,7 +79,8 @@ class Position:
             side (str): "long" atau "short"
         """
         self.symbol = symbol
-        self.entry_price = entry_price
+        self.entry_price_market = entry_price
+        self.entry_price = entry_price * (1 + INDODAX_BUY_FEE)  # true cost basis include fee
         self.initial_amount = amount
         self.amount = amount
         self.side = side
@@ -384,11 +395,17 @@ class RiskManager:
         """
         risk_pct = RISK_PRIMARY_PCT if is_primary else RISK_SECONDARY_PCT
         risk_amount = balance * risk_pct
-        position_value = min(POSITION_SIZE_USDT, risk_amount)
+        # Adaptive cap: saldo < 500rb pakai 30% saldo biar tetap bisa entry (saldo 80rb -> 24rb, bukan stuck 500rb)
+        cap = balance * 0.30 if balance < POSITION_SIZE_USDT else POSITION_SIZE_USDT
+        position_value = min(cap, risk_amount)
         min_value = MIN_ORDER_IDR * 1.5
         if position_value < min_value:
-            if balance >= MIN_ORDER_IDR:
-                position_value = balance * 0.95
+            if balance >= MIN_ORDER_IDR * 1.5:
+                # pakai 95% balance hanya jika masih di atas min order
+                position_value = max(balance * 0.95, float(MIN_ORDER_IDR))
+            elif balance >= MIN_ORDER_IDR:
+                position_value = float(balance)
+                logger.warning(f"Insufficient risk budget: balance {balance:,.0f} < min {min_value:,.0f}, using full balance")
             else:
                 return 0
         amount = position_value / current_price
@@ -429,12 +446,16 @@ class RiskManager:
             pos = self.positions[symbol]
             pos.status = "closed"
 
+            # Net % pakai cost basis sudah include fee
             if pos.side == "long":
-                pnl_pct = (exit_price - pos.entry_price) / pos.entry_price
+                pnl_pct = (exit_price * (1 - INDODAX_SELL_FEE) - pos.entry_price) / pos.entry_price
             else:
-                pnl_pct = (pos.entry_price - exit_price) / pos.entry_price
+                pnl_pct = (pos.entry_price - exit_price * (1 + INDODAX_SELL_FEE)) / pos.entry_price
 
-            pnl_amount = (exit_price - pos.entry_price) * pos.amount
+            # Net PnL: sudah potong fee beli & jual
+            buy_cost = pos.entry_price * pos.amount  # sudah include buy fee
+            sell_proceeds = exit_price * (1 - INDODAX_SELL_FEE) * pos.amount
+            pnl_amount = sell_proceeds - buy_cost
 
             trade_record = {
                 "symbol": symbol,
@@ -489,6 +510,34 @@ class RiskManager:
 
         return None
 
+    def get_dust_symbols(self, exchange, min_idr=10000):
+        """
+        Mengumpulkan simbol yang nilainya terlalu kecil untuk dijual (dust).
+
+        Mengecek setiap posisi open, mengambil harga ticker terkini, dan
+        menandai sebagai dust jika nilai posisi (amount * last) < min_idr.
+        Dust sebaiknya tidak dijual untuk menghindari error lot minimal exchange.
+
+        Args:
+            exchange (IndodaxExchange): Instance exchange untuk fetch ticker.
+            min_idr (int, optional): Batas minimal nilai posisi. Default 10000.
+
+        Returns:
+            list[str]: Daftar simbol dust yang sebaiknya dilewati saat sell.
+        """
+        dust = []
+        for sym, pos in self.positions.items():
+            if pos.status != "open":
+                continue
+            try:
+                ticker = exchange.fetch_ticker(sym)
+                if ticker and ticker.get("last"):
+                    if pos.amount * ticker["last"] < min_idr:
+                        dust.append(sym)
+            except Exception:
+                pass
+        return dust
+
     def get_total_pnl(self):
         """
         Menghitung total profit/loss kumulatif sepanjang masa (all-time realized PnL).
@@ -526,6 +575,7 @@ class RiskManager:
         return round(avg_win, 2), round(avg_loss, 2)
 
     def get_unrealized_pnl(self, exchange):
+        # Net unrealized sudah potong estimasi fee jual 0.3%
         """
         Menghitung estimasi floating profit/loss (unrealized PnL) dari seluruh posisi terbuka saat ini.
         
@@ -612,7 +662,7 @@ class TradingStrategy:
         self.risk_manager = risk_manager
         self.min_confidence = 0.70
         self.rsi_overbought = 70
-        self.rsi_entry_max = 40
+        self.rsi_entry_max = 65  # dilonggarkan (dulu 50 keblock semua, selaras saham)
         self.min_risk_reward = 2.0
         self.min_win_rate = 40.0
 
@@ -667,14 +717,23 @@ class TradingStrategy:
 
             if pos.should_partial_sell(current_price):
                 partial_amount = pos.partial_sell_amount()
-                pos.partial_sell_count += 1
-                pos.amount -= partial_amount
-                return {
-                    "action": "partial_sell",
-                    "reason": f"tp1_hit (+3% @ {pos.get_tp1_price():,.0f})",
-                    "analysis": analysis,
-                    "amount": partial_amount,
-                }
+                # Jangan kirim partial sell jika nilai order di bawah minimum order
+                # exchange (Indodax min order ~10k IDR) - akan ditolak dan
+                # status partial_sell_count sudah terlanjur bertambah.
+                if partial_amount * current_price < MIN_ORDER_IDR:
+                    logger.info(
+                        f"[{symbol}] Partial sell skipped: order value "
+                        f"{partial_amount * current_price:,.0f} IDR < min order {MIN_ORDER_IDR:,} IDR"
+                    )
+                else:
+                    pos.partial_sell_count += 1
+                    pos.amount -= partial_amount
+                    return {
+                        "action": "partial_sell",
+                        "reason": f"tp1_hit (+3% @ {pos.get_tp1_price():,.0f})",
+                        "analysis": analysis,
+                        "amount": partial_amount,
+                    }
 
             if pos.should_full_sell(current_price):
                 return {
@@ -735,9 +794,13 @@ class TradingStrategy:
                 return {"action": "hold", "reason": "rsi_too_high", "analysis": analysis}
 
             win_rate = self.risk_manager.get_win_rate()
-            if len(self.risk_manager.trade_history) >= 5 and win_rate < self.min_win_rate:
-                logger.info(f"[{symbol}] Skip buy: win rate {win_rate}% < {self.min_win_rate}%")
+            n_trades = len(self.risk_manager.trade_history)
+            effective_min = 25.0 if n_trades < 20 else self.min_win_rate
+            if n_trades >= 10 and win_rate < effective_min:
+                logger.info(f"[{symbol}] Skip buy: win rate {win_rate}% < {self.min_win_rate}% (n={n_trades})")
                 return {"action": "hold", "reason": "low_win_rate", "analysis": analysis}
+            elif n_trades >= 5 and win_rate < self.min_win_rate:
+                logger.warning(f"[{symbol}] Low win rate {win_rate}% < {effective_min}% but allowing (n={n_trades} < 10)")
 
             risk = current_price * STOP_LOSS_PCT
             reward = current_price * TAKE_PROFIT_PCT

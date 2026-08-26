@@ -1,0 +1,19 @@
+[Unit]
+Description=Indodax Trading Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cahyo
+WorkingDirectory=/home/cahyo/trading-bot/indodax
+ExecStart=/home/cahyo/trading-bot/venv/bin/python3 /home/cahyo/trading-bot/indodax/bot.py
+Restart=on-failure
+RestartSec=10
+StandardInput=null
+StandardOutput=append:/home/cahyo/trading-bot/indodax/logs/bot.log
+StandardError=append:/home/cahyo/trading-bot/indodax/logs/bot.log
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

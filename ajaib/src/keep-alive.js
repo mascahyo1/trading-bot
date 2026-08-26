@@ -318,7 +318,13 @@ async function main() {
                         } else {
                             log('Still blocked after solve attempt');
                             if (attempt >= 3) {
-                                await sendTelegram('<b>AJAIB BOT</b>\nCloudflare blocked! Run: npm run login');
+                                try {
+                        const { execSync } = require('child_process');
+                        log('Cloudflare/session expired - coba auto-login ...');
+                        execSync('node ' + path.join(__dirname, 'auto-login.js'), { timeout: 90000, stdio: 'inherit' });
+                        log('auto-login selesai, coba lagi next cycle');
+                    } catch(e) { log('auto-login gagal: ' + e.message); }
+                    await sendTelegram('<b>AJAIB BOT</b>\nCloudflare blocked! Auto-login dicoba, cek log.');
                             }
                             await browser.close();
                             continue;
@@ -388,15 +394,15 @@ async function main() {
             const now = formatJakartaTime(new Date());
             const lines = [
                 '<b>AJAIB PORTFOLIO</b>',
-                `⏰ ${now}`,
+                'WIB ' + now,
                 '',
-                `<b>💰 CASH: ${portfolio.cash.toLocaleString('id-ID')} IDR</b>`,
+                `<b>CASH: ${portfolio.cash.toLocaleString('id-ID')} IDR</b>`,
                 '',
             ];
 
             let totalStockValue = 0;
             if (portfolio.stocks.length > 0) {
-                lines.push('<b>📈 PER SAHAM:</b>');
+                lines.push('<b>PER SAHAM:</b>');
                 lines.push('');
                 for (const stock of portfolio.stocks) {
                     // Nilai posisi = lots x 100 lembar x harga per lembar
@@ -411,10 +417,10 @@ async function main() {
             }
 
             const grandTotal = portfolio.cash + totalStockValue;
-            lines.push(`<b>💵 Total Saham: ${totalStockValue.toLocaleString('id-ID')} IDR</b>`);
-            lines.push(`<b>💰 Cash: ${portfolio.cash.toLocaleString('id-ID')} IDR</b>`);
+            lines.push(`<b>Total Saham: ${totalStockValue.toLocaleString('id-ID')} IDR</b>`);
+            lines.push(`<b>Cash: ${portfolio.cash.toLocaleString('id-ID')} IDR</b>`);
             lines.push('');
-            lines.push(`<b>🏦 GRAND TOTAL: ${grandTotal.toLocaleString('id-ID')} IDR</b>`);
+            lines.push(`<b>GRAND TOTAL: ${grandTotal.toLocaleString('id-ID')} IDR</b>`);
 
             await sendTelegram(lines.join('\n'));
 

@@ -70,7 +70,7 @@ def get_public_ip():
 
 def load_known_ip():
     """
-    Membacatatatan IP yang tersimpan dari file lokal.
+    Membaca catatan IP yang tersimpan dari file lokal.
 
     Returns:
         str: IP yang diketahui sebelumnya, atau None jika file tidak ada.
@@ -191,7 +191,7 @@ ALL_PAIRS = [
 ]
 
 # Jumlah maksimal aset teratas yang dianalisis oleh AI LLM dalam satu siklus
-LLM_TOP_PAIRS = 5
+LLM_TOP_PAIRS = 3
 
 # ------------------------------------------------------------------------------
 # Parameter Manajemen Risiko (Risk Management & Position Sizing)
@@ -208,7 +208,7 @@ MAX_OPEN_POSITIONS = 3       # Batas maksimal posisi terbuka secara simultan
 # ------------------------------------------------------------------------------
 # Ukuran Order & Rebalancing
 # ------------------------------------------------------------------------------
-POSITION_SIZE_USDT = 500000  # Nilai basis posisi default dalam IDR (500.000 IDR)
+POSITION_SIZE_USDT = 500000  # Default 500rb; jika saldo < 500rb pakai 30% saldo (adaptive, lihat strategy.py)
 MIN_ORDER_IDR = 10000        # Nilai transaksi minimum yang diizinkan sistem Indodax (Rp 10.000)
 REBALANCE_PCT = 0.5          # Rasio rebalancing porsi partial sell
 

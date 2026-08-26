@@ -14,6 +14,10 @@ Indikator:
 
 Author: AI Trading Bot
 """
+"""
+Analyzer Saham - sama indikator + ATR filter, bobot 70% teknikal 30% LLM
+"""
+
 
 import numpy as np
 import pandas as pd
@@ -32,10 +36,14 @@ class MarketAnalyzer:
 
     def __init__(self, use_llm=False):
         """
-        Initialize MarketAnalyzer.
-        
+        Inisialisasi MarketAnalyzer dengan bobot sinyal teknikal.
+
+        Bobot default: RSI 20%, MACD 20%, EMA 20%, Bollinger 15%,
+        Volume 10%, ATR 15%. LLM opsional (default nonaktif untuk saham).
+
         Args:
-            use_llm (bool): Aktifkan LLM analysis (default False untuk saham)
+            use_llm (bool): Jika True, aktifkan analisis tambahan via LLM.
+                Default False (hanya teknikal).
         """
         self.signal_weights = {
             "rsi": 0.20,

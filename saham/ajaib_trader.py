@@ -56,7 +56,10 @@ sys.path.insert(0, SCRIPT_DIR)
 
 from config import (
     AJAIB_SESSION_FILE,
+    AJAIB_PERSISTENT_PROFILE,
     AJAIB_BASE_URL,
+    AJAIB_USER_AGENT,
+    AJAIB_PROXY,
     STOCK_CODE_MAP,
     now_jakarta,
 )
@@ -104,19 +107,47 @@ class AjaibTrader:
 
     async def _init_browser(self):
         """
-        Launch Chromium headless baru dengan User-Agent custom
-        untuk bypass Cloudflare bot detection.
+        Meluncurkan browser Chromium dengan profile yang tepat.
 
-        User-Agent di-match persis dengan browser lokal user agar Cloudflare
-        tidak mendeteksi sebagai headless/automated browser.
+        Jika persistent profile tersedia, gunakan launch_persistent_context
+        agar cookies dan sesi lebih awet. Jika tidak, gunakan launch
+        biasa dengan storage_state. Mengatur proxy dan User-Agent konsisten.
 
         Returns:
-            Browser: Instance Chromium headless yang siap dipakai.
+            tuple: (playwright_instance, browser_or_context) yang sudah siap pakai.
         """
         from playwright.async_api import async_playwright
         self._playwright = await async_playwright().start()
-        self._browser = await self._playwright.chromium.launch(headless=True)
+        # Jika persistent profile ada di server, pakai itu (sesi lebih awet, fingerprint sama)
+        launch_kwargs = {"headless": True}
+        if AJAIB_PROXY:
+            launch_kwargs["proxy"] = {"server": AJAIB_PROXY}
+        self._browser = await self._playwright.chromium.launch(**launch_kwargs)
         return self._browser
+
+    def _uses_persistent(self):
+        """
+        Mengecek apakah persistent browser profile tersedia dan harus dipakai.
+
+        Persistent profile dipakai hanya jika storage-state TIDAK mengandung
+        access_token (login lama). Jika storage-state sudah fresh (ada token),
+        lebih utamakan storage_state agar sesi selalu terbaru.
+
+        Returns:
+            bool: True jika persistent profile ada dan layak dipakai; False jika tidak.
+        """
+        # Persistent dipakai hanya jika storage-state TIDAK punya token login
+        # Kalau storage-state sudah ada access_token (login via tunnel baru), pakai storage dulu
+        try:
+            if os.path.exists(self.session_file):
+                import json as _js
+                d = _js.loads(open(self.session_file,encoding="utf-8").read())
+                has_token = any(c.get("name")=="access_token" for c in d.get("cookies",[]))
+                if has_token:
+                    return False  # pakai storage-state yang fresh
+        except Exception:
+            pass
+        return os.path.isdir(AJAIB_PERSISTENT_PROFILE) and bool(os.listdir(AJAIB_PERSISTENT_PROFILE))
 
     async def _apply_stealth(self, page):
         """
@@ -127,23 +158,53 @@ class AjaibTrader:
 
     async def _close(self):
         """Tutup browser dan stop playwright instance (cleanup)."""
-        if self._browser:
-            await self._browser.close()
+        try:
+            if self._browser:
+                await self._browser.close()
+        except Exception:
+            pass
         if self._playwright:
-            await self._playwright.stop()
+            try:
+                await self._playwright.stop()
+            except Exception:
+                pass
+
+    async def _try_auto_login(self):
+        """Coba auto-login pakai ENV (ajaib_email/password/pin) via Node.js auto-login.js + Xvfb."""
+        import subprocess, pathlib, os, shutil
+        node_script = pathlib.Path(__file__).parent.parent / "ajaib" / "src" / "auto-login.js"
+        alt = pathlib.Path.home() / "trading-bot" / "ajaib" / "src" / "auto-login.js"
+        target = str(node_script if node_script.exists() else alt)
+        env = os.environ.copy()
+        if not env.get("DISPLAY"):
+            env["DISPLAY"] = ":99"
+            if shutil.which("Xvfb"):
+                try:
+                    subprocess.run(["sh", "-c", "pgrep Xvfb >/dev/null || (Xvfb :99 -screen 0 1366x768x24 >/tmp/xvfb.log 2>&1 & sleep 2)"], timeout=8)
+                except Exception:
+                    pass
+        try:
+            logger.warning(f"Session expired - coba auto-login via {target} DISPLAY={env.get('DISPLAY')} ...")
+            proc = subprocess.run(["node", target], capture_output=True, text=True, timeout=180, env=env)
+            out = (proc.stdout or "")[-1200:] + (proc.stderr or "")[-600:]
+            logger.info(f"auto-login exit {proc.returncode}: {out[-700:]}")
+            if proc.returncode == 0 and pathlib.Path(self.session_file).exists():
+                logger.info("auto-login berhasil - session refreshed")
+                return True
+            logger.warning(f"auto-login gagal (code {proc.returncode})")
+        except Exception as e:
+            logger.warning(f"auto-login error: {e}")
+        return False
 
     async def _ensure_logged_in(self, context):
         """
-        Verifikasi session masih valid dengan membuka halaman home.
-
-        Logika: jika Ajaib me-redirect ke halaman login, artinya
-        cookie/session sudah expired dan harus login ulang manual.
+        Verifikasi session masih valid. Jika expired, coba auto-login sekali via ENV.
 
         Args:
             context: BrowserContext dengan storage_state dimuat
 
         Returns:
-            bool: True jika masih login, False jika session expired.
+            bool: True jika masih login (setelah auto-login jika perlu).
         """
         page = await context.new_page()
         await self._apply_stealth(page)
@@ -151,9 +212,19 @@ class AjaibTrader:
         url = page.url
         title = await page.title()
         await page.close()
-        # Cloudflare challenge: URL tetap /home tapi title berubah
-        if "login" in url.lower() or "Cloudflare" in title or "Attention Required" in title:
+        # Deteksi sesi: cek URL redirect ke login ATAU halaman login Ajaib
+        # Title "Ajaib.co.id" = home valid, jangan dianggap expired
+        if "login" in url.lower():
+            logger.error(f"Session expired (redirect to login, url={url})")
+            if await self._try_auto_login():
+                # retry once after auto-login
+                await context.close() if hasattr(context, "close") else None
+                return True  # caller will re-init browser; treat as recovered
+            return False
+        if "Cloudflare" in title or "Attention Required" in title or "Masuk untuk berinvestasi" in title:
             logger.error(f"Session expired or Cloudflare challenge (title={title})")
+            if await self._try_auto_login():
+                return True
             return False
         return True
 
@@ -176,12 +247,23 @@ class AjaibTrader:
             return None
 
         browser = await self._init_browser()
-        try:
+        # Prefer persistent context jika ada (sesi login lokal via tunnel sudah masuk)
+        use_persistent = self._uses_persistent()
+        if use_persistent:
+            context = await self._playwright.chromium.launch_persistent_context(
+                user_data_dir=AJAIB_PERSISTENT_PROFILE,
+                headless=True,
+                user_agent=USER_AGENT,
+                viewport={'width': 1920, 'height': 1080},
+                **({"proxy": {"server": AJAIB_PROXY}} if AJAIB_PROXY else {}),
+            )
+        else:
             context = await browser.new_context(
                 storage_state=self.session_file,
                 user_agent=USER_AGENT,
                 viewport={'width': 1920, 'height': 1080},
             )
+        try:
             if not await self._ensure_logged_in(context):
                 logger.error("Session expired")
                 return None
@@ -195,7 +277,7 @@ class AjaibTrader:
             logger.info(f"Ajaib page: url={page.url}, title={page_title}")
             if "Cloudflare" in page_title or "Attention Required" in page_title:
                 logger.error("Cloudflare challenge detected during portfolio scrape")
-                await context.storage_state(path=self.session_file)
+                # JANGAN simpan storage_state - cookies CF akan merusak session asli
                 await page.close()
                 await context.close()
                 return None
@@ -205,92 +287,90 @@ class AjaibTrader:
 
             # JavaScript dieksekusi DI DALAM browser (context halaman).
             # Perhatikan escaping \\s, \\d dsb karena string Python -> JS regex.
-            portfolio = await page.evaluate("""() => {
-                try {
-                    const result = {
-                        cash: 0,
-                        stocks: [],
-                        totalValue: 0,
-                        totalStockValue: 0,
-                    };
-
-                    // Replace non-breaking space dengan spasi biasa
-                    const allText = document.body.innerText.replace(/\\xa0/g, ' ');
-
-                    // Cari Buying Power - format: "Buying Power Rp 100.000"
-                    const bpMatch = allText.match(/Buying Power\\s*Rp\\s*([\\d.,]+)/i);
-                    if (bpMatch) {
-                        result.cash = parseFloat(bpMatch[1].replace(/\\./g, '').replace(',', '.'));
-                    }
-
-                    // Fallback: cari "Total Investasi" atau pola Rp lain
-                    if (result.cash === 0) {
-                        const totalInv = allText.match(/Total Investasi\\s*Rp\\s*([\\d.,]+)/i);
-                        if (totalInv) {
-                            result.cash = parseFloat(totalInv[1].replace(/\\./g, '').replace(',', '.'));
-                        }
-                    }
-
-                    // Scan saham dari tabel - format: KODE  Volume  Harga  Change
-                    const lines = allText.split('\\n').map(l => l.trim()).filter(l => l.length > 0);
-                    for (let i = 0; i < lines.length; i++) {
-                        const line = lines[i];
-                        // Kode saham 4 huruf kapital
-                        if (/^[A-Z]{4}$/.test(line)) {
-                            let price = 0;
-                            // Cari harga di baris berikutnya (format: Rp xxx)
-                            for (let j = i + 1; j < Math.min(i + 5, lines.length); j++) {
-                                const priceMatch = lines[j].match(/Rp\\s*(\\d{3,}(?:[.,]\\d+)?)/);
-                                if (priceMatch) {
-                                    price = parseFloat(priceMatch[1].replace(/\\./g, '').replace(',', '.'));
-                                    break;
-                                }
-                            }
-                            result.stocks.push({code: line, lots: 0, price: price});
-                        }
-                    }
-
-                    return result;
-                } catch (e) {
-                    return {error: e.message, cash: 0, stocks: []};
-                }
-            }""")
-
+            # Klik tab Portofolio agar tabel holdings muncul (home saja tidak ada detail lot)
+            try:
+                port_btn = page.locator("text=Portofolio").first
+                if await port_btn.count() > 0:
+                    await port_btn.click()
+                    await page.wait_for_timeout(4000)
+            except Exception:
+                pass
+            # Tunggu Buying Power muncul (hindari cash 0 race)
+            try:
+                await page.wait_for_selector("text=Buying Power", timeout=8000)
+            except: pass
+            # Ambil innerText saja, parsing di Python (hindari SyntaxError JS)
+            _raw = await page.evaluate("() => document.body.innerText")
+            import re as _re
+            _cash = 0
+            _m = _re.search(r"Buying Power\s*Rp\s*([\d.,]+)", _raw, _re.I)
+            if _m:
+                try: _cash = float(_m.group(1).replace(".", "").replace(",", ".")) or 0
+                except: _cash = 0
+            if not _cash:
+                _m2 = _re.search(r"Buying Power[^0-9]*Rp\s*([\d.,]+)", _raw, _re.I)
+                if _m2:
+                    try: _cash = float(_m2.group(1).replace(".", "").replace(",", ".")) or 0
+                    except: _cash = 0
+            _stocks = []
+            _lines = [l.strip() for l in _raw.split("\n") if l.strip()]
+            for _i, _ln in enumerate(_lines):
+                if _re.match(r"^[A-Z]{4}$", _ln):
+                    if _i + 5 >= len(_lines): continue
+                    try:
+                        _lot = int(_re.sub(r"[^0-9]", "", _lines[_i+1]) or "0")
+                        _avg = float(_re.sub(r"Rp\s*", "", _lines[_i+2], flags=_re.I).replace(".", "").replace(",", ".")) or 0
+                        _cur = float(_re.sub(r"Rp\s*", "", _lines[_i+3], flags=_re.I).replace(".", "").replace(",", ".")) or 0
+                        _inv = float(_re.sub(r"Rp\s*", "", _lines[_i+4], flags=_re.I).replace(".", "").replace(",", ".")) or 0
+                        _tot = float(_re.sub(r"Rp\s*", "", _lines[_i+5], flags=_re.I).replace(".", "").replace(",", ".")) or 0
+                    except: continue
+                    if _lot>0 and _avg>0 and _cur>0:
+                        _stocks.append({"code": _ln, "lots": _lot, "avg_price": _avg, "price": _cur, "invested": _inv, "total": _tot})
+            portfolio = {"cash": _cash, "stocks": _stocks, "totalValue": sum(s.get("total",0) for s in _stocks)}
+            # Fallback cash: kalau Buying Power belum render, pakai portfolio.json (76.865) jangan 0
+            if portfolio.get("cash", 0) == 0:
+                try:
+                    import json as _js2, pathlib as _pl2
+                    _pf = _pl2.Path(__file__).parent.parent / "ajaib" / "session" / "portfolio.json"
+                    if not _pf.exists():
+                        _pf = _pl2.Path.home() / "trading-bot" / "ajaib" / "session" / "portfolio.json"
+                    if _pf.exists():
+                        _d = _js2.loads(_pf.read_text(encoding="utf-8"))
+                        _fc = int(_d.get("cash", 0) or 0)
+                        if _fc > 0:
+                            portfolio["cash"] = float(_fc)
+                            logger.info(f"Fallback cash from portfolio.json: {_fc:,.0f} (scrape cash 0)")
+                except Exception as _e:
+                    logger.warning(f"Fallback cash read failed: {_e}")
+            # Retry:
             # Retry: konten dinamis kadang belum ter-render saat pertama kali scrape
             for attempt in range(3):
                 if portfolio and (portfolio.get('cash', 0) > 0 or len(portfolio.get('stocks', [])) > 0):
                     break
-                logger.warning(f"Scrape kosong (attempt {attempt + 1}/3), tunggu 3s dan retry...")
+                logger.debug(f"Scrape kosong (attempt {attempt + 1}/3), retry...")
                 await page.wait_for_timeout(3000)
-                portfolio = await page.evaluate("""() => {
-                    const result = {cash: 0, stocks: []};
-                    const allText = document.body.innerText.replace(/\\xa0/g, ' ');
-                    const bpMatch = allText.match(/Buying Power\\s*Rp\\s*([\\d.,]+)/i);
-                    if (bpMatch) {
-                        result.cash = parseFloat(bpMatch[1].replace(/\\./g, '').replace(',', '.'));
-                    }
-                    if (result.cash === 0) {
-                        const totalInv = allText.match(/Total Investasi\\s*Rp\\s*([\\d.,]+)/i);
-                        if (totalInv) {
-                            result.cash = parseFloat(totalInv[1].replace(/\\./g, '').replace(',', '.'));
-                        }
-                    }
-                    const lines = allText.split('\\n').map(l => l.trim()).filter(l => l.length > 0);
-                    for (let i = 0; i < lines.length; i++) {
-                        if (/^[A-Z]{4}$/.test(lines[i])) {
-                            let price = 0;
-                            for (let j = i + 1; j < Math.min(i + 5, lines.length); j++) {
-                                const pm = lines[j].match(/Rp\\s*(\\d{3,}(?:[.,]\\d+)?)/);
-                                if (pm) {
-                                    price = parseFloat(pm[1].replace(/\\./g, '').replace(',', '.'));
-                                    break;
-                                }
-                            }
-                            result.stocks.push({code: lines[i], lots: 0, price: price});
-                        }
-                    }
-                    return result;
-                }""")
+                _raw2 = await page.evaluate("() => document.body.innerText")
+                _cash2 = 0
+                _m2 = _re.search(r"Buying Power\s*Rp\s*([\d.,]+)", _raw2, _re.I)
+                if _m2:
+                    try: _cash2 = float(_m2.group(1).replace(".", "").replace(",", ".")) or 0
+                    except: _cash2 = 0
+                _stocks2 = []
+                _lines2 = [l.strip() for l in _raw2.split("\n") if l.strip()]
+                for _i2, _ln2 in enumerate(_lines2):
+                    if _re.match(r"^[A-Z]{4}$", _ln2):
+                        if _i2 + 5 >= len(_lines2): continue
+                        try:
+                            _lot2 = int(_re.sub(r"[^0-9]", "", _lines2[_i2+1]) or "0")
+                            _avg2 = float(_re.sub(r"Rp\s*", "", _lines2[_i2+2], flags=_re.I).replace(".", "").replace(",", ".")) or 0
+                            _cur2 = float(_re.sub(r"Rp\s*", "", _lines2[_i2+3], flags=_re.I).replace(".", "").replace(",", ".")) or 0
+                        except: continue
+                        if _lot2>0 and _avg2>0 and _cur2>0:
+                            _stocks2.append({"code": _ln2, "lots": _lot2, "avg_price": _avg2, "price": _cur2})
+                _fc2 = portfolio.get("cash", 0) if isinstance(portfolio, dict) else 0
+                if _cash2 == 0 and _fc2 > 0:
+                    _cash2 = _fc2
+                portfolio = {"cash": _cash2, "stocks": _stocks2}
 
             # Debug: log hasil scraping untuk diagnose
             logger.info(f"DEBUG: portfolio result = {json.dumps(portfolio, default=str)[:300]}")
@@ -338,12 +418,22 @@ class AjaibTrader:
         # Konversi "BBCA.JK" -> "BBCA" untuk URL Ajaib
         code = STOCK_CODE_MAP.get(stock_code, stock_code.replace(".JK", ""))
         browser = await self._init_browser()
-        try:
+        # Persistent profile (dari login via tunnel) lebih awet daripada storage-state
+        if self._uses_persistent():
+            context = await self._playwright.chromium.launch_persistent_context(
+                user_data_dir=AJAIB_PERSISTENT_PROFILE,
+                headless=True,
+                user_agent=USER_AGENT,
+                viewport={'width': 1920, 'height': 1080},
+                **({"proxy": {"server": AJAIB_PROXY}} if AJAIB_PROXY else {}),
+            )
+        else:
             context = await browser.new_context(
                 storage_state=self.session_file,
                 user_agent=USER_AGENT,
                 viewport={'width': 1920, 'height': 1080},
             )
+        try:
             if not await self._ensure_logged_in(context):
                 return {"success": False, "error": "Session expired"}
 
@@ -405,12 +495,22 @@ class AjaibTrader:
 
         code = STOCK_CODE_MAP.get(stock_code, stock_code.replace(".JK", ""))
         browser = await self._init_browser()
-        try:
+        # Persistent profile (dari login via tunnel) lebih awet daripada storage-state
+        if self._uses_persistent():
+            context = await self._playwright.chromium.launch_persistent_context(
+                user_data_dir=AJAIB_PERSISTENT_PROFILE,
+                headless=True,
+                user_agent=USER_AGENT,
+                viewport={'width': 1920, 'height': 1080},
+                **({"proxy": {"server": AJAIB_PROXY}} if AJAIB_PROXY else {}),
+            )
+        else:
             context = await browser.new_context(
                 storage_state=self.session_file,
                 user_agent=USER_AGENT,
                 viewport={'width': 1920, 'height': 1080},
             )
+        try:
             if not await self._ensure_logged_in(context):
                 return {"success": False, "error": "Session expired"}
 

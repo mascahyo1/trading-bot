@@ -1,0 +1,19 @@
+[Unit]
+Description=Saham Trading Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cahyo
+WorkingDirectory=/home/cahyo/trading-bot/saham
+ExecStart=/home/cahyo/trading-bot/venv/bin/python3 /home/cahyo/trading-bot/saham/bot.py
+Restart=on-failure
+RestartSec=10
+StandardInput=null
+StandardOutput=append:/home/cahyo/trading-bot/saham/logs/bot.log
+StandardError=append:/home/cahyo/trading-bot/saham/logs/bot.log
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

@@ -11,6 +11,13 @@ Modul utama yang mengorkestrasi seluruh alur trading otomatis:
 
 Author: AI Trading Bot
 """
+"""
+Catatan Implementasi:
+- Scan 14 pair tiap 30 menit, filter top 3 by confidence >55%.
+- Tanya LLM paralel (3 thread, 8s timeout), reuse OHLCV dari scan (hemat 2x fetch).
+- Dust <10k di-skip (hindari error 400), fee 0.6% roundtrip sudah net, RSI entry 50.
+"""
+
 
 import time
 import logging
@@ -18,6 +25,7 @@ import signal
 import os
 import sys
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -114,9 +122,18 @@ class ProductionBot:
             quote_order_qty=quote_qty,
         )
         if order and not order.get("error"):
-            qty = float(order.get("origQty", 0))
+            qty = float(order.get("origQty", 0) or 0)
             if qty == 0:
                 qty = amount
+            # Jangan catat posisi kalau nilai order riil di bawah minimum
+            # (mis. saldo sisa dipakai DCA/rebalance) - order kecil akan
+            # ditolak exchange atau tidak layak dikelola SL/TP.
+            if qty * current_price < MIN_ORDER_IDR:
+                self.logger.warning(
+                    f"Buy skipped: executed qty {qty} @ {current_price:,.0f} "
+                    f"= {qty * current_price:,.0f} IDR < min order {MIN_ORDER_IDR:,} IDR"
+                )
+                return False
             self.risk_manager.add_position(symbol, current_price, qty)
             self.notifier.notify_trade(symbol, "BUY", current_price, qty)
             self.telegram.notify_trade(symbol, "BUY", current_price, qty)
@@ -138,6 +155,10 @@ class ProductionBot:
         """
         if symbol in self.risk_manager.positions:
             pos = self.risk_manager.positions[symbol]
+            # Dust skip: jangan coba jual recehan < 10k (pasti ditolak 400)
+            if pos.amount * current_price < 10000:
+                self.logger.info(f"[{symbol}] Skip sell: dust {pos.amount * current_price:,.0f} IDR < 10k")
+                return False
             pair = INDODAX_SYMBOL_MAP.get(symbol, symbol.replace("/", ""))
             order = self.exchange.create_order(
                 symbol=pair,
@@ -175,6 +196,10 @@ class ProductionBot:
         Returns:
             bool: True jika order parsial berhasil, False jika gagal.
         """
+        # Dust skip partial juga
+        if amount * current_price < 10000:
+            self.logger.info(f"[{symbol}] Skip partial sell: dust {amount * current_price:,.0f} IDR < 10k")
+            return False
         pair = INDODAX_SYMBOL_MAP.get(symbol, symbol.replace("/", ""))
         order = self.exchange.create_order(
             symbol=pair,
@@ -183,7 +208,9 @@ class ProductionBot:
             quantity=amount,
         )
         if order and not order.get("error"):
-            pnl = (current_price - self.risk_manager.positions[symbol].entry_price) * amount
+            # Net partial PnL sudah potong fee jual 0.3% (entry_price sudah include buy fee)
+            pos = self.risk_manager.positions[symbol]
+            pnl = (current_price * (1 - 0.003) - pos.entry_price) * amount
             self.notifier.notify_trade(symbol, "PARTIAL SELL", current_price, amount, pnl)
             self.telegram.notify_trade(symbol, "PARTIAL SELL", current_price, amount, pnl)
             self.daily_pnl += pnl
@@ -215,6 +242,7 @@ class ProductionBot:
                 analysis = self.analyzer.analyze_technical(ohlcv, symbol=symbol)
                 analysis["symbol"] = symbol
                 analysis["current_price"] = ticker["last"]
+                analysis["ohlcv"] = ohlcv  # keep for LLM deep-analysis reuse
                 results.append(analysis)
             except Exception as e:
                 self.logger.warning(f"[{symbol}] Scan error: {e}")
@@ -246,23 +274,60 @@ class ProductionBot:
         Returns:
             list: Daftar hasil analisis lengkap yang sudah digabung dengan scoring LLM.
         """
+        if not candidates:
+            return []
+        # Reuse OHLCV yang sudah ada dari scan_all_pairs bila tersedia
         analyzed = []
-        for c in candidates:
+
+        def _analyze_one(c):
+            """
+            Menganalisis satu kandidat koin dengan LLM (jika memenuhi syarat).
+
+            Dipanggil secara paralel via ThreadPoolExecutor untuk kandidat top.
+            Jika confidence teknikal <0.6 atau kandidat >6, LLM dilewati (fast path).
+            OHLCV dan ticker diambil ulang hanya jika tidak tersedia di cache scan.
+
+            Args:
+                c (dict): Kandidat dari get_top_candidates berisi symbol, confidence,
+                          ohlcv (opsional), dan indikator teknikal.
+
+            Returns:
+                dict | None: Kandidat yang sudah diperkaya analisis LLM (berisi
+                             current_price, analysis, llm) atau None jika data tidak lengkap.
+            """
             try:
                 symbol = c["symbol"]
-                ohlcv = self.exchange.fetch_ohlcv(symbol, timeframe=CANDLESTICK_TIMEFRAME, limit=100)
+                ohlcv = c.get("ohlcv")
                 if not ohlcv:
-                    continue
+                    ohlcv = self.exchange.fetch_ohlcv(symbol, timeframe=CANDLESTICK_TIMEFRAME, limit=100)
+                if not ohlcv:
+                    return None
                 ticker = self.exchange.fetch_ticker(symbol)
                 if not ticker:
-                    continue
+                    return None
+                # Skip LLM kalau confidence teknikal rendah (<0.6) -> hemat waktu & API
+                tech = c.get("confidence", 0)
+                use_llm_here = tech >= 0.6 and len(candidates) <= 6
+                if not use_llm_here:
+                    # fast path: no LLM call, just return candidate's own analysis
+                    c["current_price"] = ticker["last"]
+                    return c
                 analysis = self.analyzer.analyze(ohlcv, symbol=symbol)
                 analysis["symbol"] = symbol
                 analysis["current_price"] = ticker["last"]
-                analyzed.append(analysis)
+                return analysis
             except Exception as e:
-                self.logger.warning(f"[{symbol}] LLM analysis error: {e}")
-            time.sleep(1.5)
+                self.logger.warning(f"[{c.get('symbol','?')}] LLM analysis error: {e}")
+                return None
+
+        # Parallel LLM: max 3 concurrent (rate-limit friendly)
+        max_workers = min(3, len(candidates))
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            fut_map = {pool.submit(_analyze_one, c): c for c in candidates}
+            for fut in as_completed(fut_map):
+                res = fut.result()
+                if res:
+                    analyzed.append(res)
         return analyzed
 
     def process_pair(self, symbol, ohlcv=None, is_primary=True):
@@ -417,6 +482,16 @@ class ProductionBot:
         self.notifier.notify_summary(self.risk_manager)
         self.logger.info(f"Today: PnL={self.daily_pnl:+,.0f} IDR | Trades={self.trades_today}")
 
+        # Jika tidak ada buy tereksekusi (buy_candidates ada tapi tidak ada trade baru), jelaskan ke Telegram
+        try:
+            # trades_today tidak naik di cycle ini -> kirim penjelasan biar user tidak kira bot diam
+            if len(buy_candidates) == 0 or self.trades_today == getattr(self, '_last_trades_today', 0):
+                # hanya kirim jika memang tidak ada buy yang affordable
+                if len(buy_candidates) == 0:
+                    self._send_indodax_no_buy_explanation(all_results, buy_candidates, sell_candidates, balance)
+        except: pass
+        self._last_trades_today = self.trades_today
+
         try:
             unrealized = self.risk_manager.get_unrealized_pnl(self.exchange)
             total_portfolio = self.risk_manager.get_total_portfolio_value(self.exchange, balance)
@@ -426,6 +501,67 @@ class ProductionBot:
 
         self.logger.info(f"Uptime: {str(now - self.start_time).split('.')[0]}")
         self.logger.info("-" * 65)
+
+    def _send_indodax_no_buy_explanation(self, all_results, buy_candidates, sell_candidates, balance):
+        """Telegram explain yang gampang dipahami - kenapa Indodax tidak beli."""
+        try:
+            low_conf = []
+            rsi_block = []
+            llm_skip = 0
+            for r in all_results:
+                llm = r.get("llm")
+                if isinstance(llm, dict) and llm.get("confidence") is None:
+                    llm_skip += 1
+            for r in all_results:
+                sig = r.get("signal","hold")
+                conf = r.get("confidence",0)
+                rsi = (r.get("indicators",{}) or {}).get("rsi",0) or 0
+                sym = r.get("symbol","")
+                if sig == "buy":
+                    if conf < 0.60:
+                        low_conf.append(f"{sym} ({conf:.0%})")
+                    elif rsi and rsi > 65:
+                        rsi_block.append(f"{sym} (RSI {rsi:.0f})")
+            lines = []
+            lines.append(f"⏸ <b>Indodax — {self._now_str()}</b>")
+            lines.append(f"Tidak ada pembelian dulu ya.")
+            lines.append(f"")
+            lines.append(f"💰 Saldo IDR: Rp{balance:,.0f} | Dicek {len(all_results)} pair: {len(buy_candidates)} mau naik, {len(sell_candidates)} mau turun")
+            lines.append(f"")
+            lines.append(f"Kenapa tidak beli:")
+            if llm_skip:
+                lines.append(f"• Analisa AI lagi lambat ({llm_skip} pair) — pakai analisa biasa dulu")
+            if buy_candidates:
+                details = []
+                for c in buy_candidates[:3]:
+                    sym2 = c.get("symbol","")
+                    conf2 = c.get("confidence",0)
+                    rsi2 = (c.get("indicators",{}) or {}).get("rsi",0)
+                    if rsi2:
+                        details.append(f"{sym2} {conf2:.0%} RSI{rsi2:.0f}")
+                    else:
+                        details.append(f"{sym2} {conf2:.0%}")
+                lines.append(f"• Sinyal bagus tapi ditahan dulu: " + ", ".join(details))
+                lines.append(f"  → biar tidak salah beli")
+            else:
+                if low_conf:
+                    lines.append(f"• Sinyalnya masih ragu ({len(low_conf)} pair): " + ", ".join(low_conf[:3]))
+                if rsi_block:
+                    lines.append(f"• Sudah kemahalan ({len(rsi_block)} pair): " + ", ".join(rsi_block[:3]))
+                    lines.append(f"  — ditahan dulu")
+                if not low_conf and not rsi_block and not llm_skip:
+                    lines.append(f"• Semua pair masih wait and see, belum ada yang mau naik kuat")
+            lines.append(f"")
+            lines.append(f"✨ Bot jalan normal. Nanti dicek lagi 30 menit lagi ya.")
+            self.telegram.send("\n".join(lines))
+        except Exception as e:
+            self.logger.warning(f"Indodax no-buy explain error: {e}")
+
+
+    def _now_str(self):
+        from datetime import datetime
+        from config import TZ_JAKARTA
+        return datetime.now(TZ_JAKARTA).strftime("%H:%M WIB")
 
     def _keyboard_listener(self):
         """
@@ -552,6 +688,10 @@ class ProductionBot:
 def main():
     """
     Fungsi entri utama program bot Indodax.
+
+    Menginisialisasi logger, membuat instance ProductionBot, lalu menjalankan
+    loop trading hingga dihentikan (SIGINT/SIGTERM atau tombol 'q').
+    Tidak menerima parameter dan tidak mengembalikan nilai.
     """
     setup_logger()
     bot = ProductionBot()
