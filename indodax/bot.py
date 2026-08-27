@@ -566,7 +566,12 @@ class ProductionBot:
     def _keyboard_listener(self):
         """
         Background listener thread untuk membaca penekanan tombol keyboard 'q' untuk graceful stop.
+        Non-TTY (systemd StandardInput=null) -> idle sleep, jangan poll (fix 100% CPU 2026-08-27).
         """
+        if not sys.stdin.isatty():
+            while self.running:
+                time.sleep(1)
+            return
         print("\n[BOT RUNNING] Press 'q' + Enter to stop safely\n")
         while self.running:
             try:
@@ -578,6 +583,7 @@ class ProductionBot:
                             self.running = False
                             self._stop_event.set()
                             break
+                    time.sleep(0.1)
                 else:
                     import select
                     if select.select([sys.stdin], [], [], 0.5)[0]:
