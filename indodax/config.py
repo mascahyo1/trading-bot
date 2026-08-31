@@ -180,7 +180,7 @@ INDODAX_SYMBOL_MAP = {
 }
 
 # Selang waktu siklus trading loop (dalam detik) dan timeframe candlestick
-INTERVAL_SECONDS = 1800       # 5 menit per siklus scanning
+INTERVAL_SECONDS = 1800       # 30 menit per siklus scanning (1800s = 30m, bukan 5m)
 CANDLESTICK_TIMEFRAME = "15m" # Candlestick 15 menit untuk analisis teknikal
 
 # Universe lengkap aset kripto yang dipantau
@@ -199,9 +199,9 @@ LLM_TOP_PAIRS = 3
 RISK_PRIMARY_PCT = 0.02      # Alokasi risiko 2% untuk koin utama (BTC, ETH, SOL)
 RISK_SECONDARY_PCT = 0.01    # Alokasi risiko 1% untuk koin altcoin sekunder
 RISK_PER_TRADE = 0.02        # Batas risiko modal per transaksi tunggal (2%)
-STOP_LOSS_PCT = 0.03         # Batas kerugian otomatis: -3% dari harga beli
-TAKE_PROFIT_PCT = 0.06       # Target keuntungan otomatis: +6% dari harga beli
-TRAILING_STOP_PCT = 0.05     # Trailing stop: 5% di bawah harga puncak tertinggi (high watermark)
+STOP_LOSS_PCT = 0.03         # Batas kerugian otomatis: -3% dari harga beli (SL 3% tetap, safety net)
+TAKE_PROFIT_PCT = 0.06       # Legacy TP 6% (dipakai R/R calc), real TP Mode Aman: 1% (TP1) & 3.5% (TP2) di strategy.py:95-96
+TRAILING_STOP_PCT = 0.05     # Legacy trailing 5% di config, real Mode Aman 1.5% di strategy.py:90
 MAX_DAILY_LOSS_PCT = 0.05    # Circuit breaker: hentikan trading jika rugi harian mencapai -5%
 MAX_OPEN_POSITIONS = 3       # Batas maksimal posisi terbuka secara simultan
 

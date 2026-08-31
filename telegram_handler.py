@@ -504,7 +504,7 @@ def get_saham_portfolio():
         lines.append("<b>PER SAHAM:</b>")
         lines.append("")
         total_value = 0
-        for s in stocks:
+        for s in _fb_stocks:
             code = s.get("code", "?")
             lots = s.get("lots", 0)
             price = s.get("price", 0)
@@ -515,8 +515,8 @@ def get_saham_portfolio():
             lines.append(f"   Harga: {price:,.0f} IDR")
             lines.append(f"   <b>Total: {value:,.0f} IDR</b>")
             lines.append("")
-        else:
-            total_value = 0
+    else:
+        total_value = 0
     lines.append(f"<b>Total Saham: {total_value:,.0f} IDR</b>")
     lines.append(f"<b>Cash: {_fb_cash:,.0f} IDR</b>")
     lines.append(f"<b>GRAND TOTAL: {_fb_cash + total_value:,.0f} IDR</b>")

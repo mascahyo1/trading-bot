@@ -114,15 +114,9 @@ class SahamBot:
         now = now_jakarta()
         if now.weekday() >= 5:
             return False
-        hour = now.hour
-        minute = now.minute
-        if hour == 9 and minute >= 0:
-            return True
-        if hour == 10 or hour == 11:
-            return True
-        if hour == 13 or hour == 14:
-            return True
-        return False
+        m = now.hour * 60 + now.minute
+        # 09:00-11:30 dan 13:30-14:59 presisi menit (fix 2026-08-31: sebelumnya 11:31-11:59 masih True, 13:00-13:29 salah True)
+        return (9 * 60 <= m <= 11 * 60 + 30) or (13 * 60 + 30 <= m <= 14 * 60 + 59)
 
     def get_cash_balance(self):
         """

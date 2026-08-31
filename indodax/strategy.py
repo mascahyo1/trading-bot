@@ -84,16 +84,19 @@ class Position:
         self.initial_amount = amount
         self.amount = amount
         self.side = side
-        self.stop_loss = entry_price * (1 - STOP_LOSS_PCT)
-        self.take_profit = entry_price * (1 + TAKE_PROFIT_PCT)
+        # FIX 2026-08-31: SL dari harga market, bukan dari entry+fee (biar SL -3% bener -3% market, bukan -2.7%)
+        self.stop_loss = entry_price * (1 - STOP_LOSS_PCT)  # SL tetap 3% biar tidak makin parah
+        self.take_profit = entry_price * (1 + TAKE_PROFIT_PCT)  # TP2 tetap 6% (legacy)
         self.highest_price = entry_price
-        self.trailing_stop_pct = 0.05
+        # MODE AMAN 2026-08-31: trailing lebih ketat setelah profit 1% (dulu 5% terlalu lebar, rugi balik)
+        self.trailing_stop_pct = 0.015  # 1.5% dari puncak (dulu 5%)
         self.entry_time = now_jakarta().isoformat()
         self.status = "open"
         self.partial_sell_count = 0
         self.dca_count = 0
-        self.tp1_pct = 0.03
-        self.tp2_pct = 0.06
+        # MODE AMAN JUAL: tunggu untung 1% baru jual 50% (dulu 3% kelamaan), TP2 3.5% jual habis (dulu 6% kejauhan)
+        self.tp1_pct = 0.01  # 1% (net 0.4% setelah fee 0.6%)
+        self.tp2_pct = 0.035  # 3.5%
         self.dca1_pct = 0.03
         self.dca2_pct = 0.06
 
@@ -384,6 +387,10 @@ class RiskManager:
     def calculate_position_size(self, balance, current_price, is_primary=True):
         """
         Menghitung ukuran lot/kuantitas koin yang aman untuk dibeli berdasarkan manajemen risiko.
+
+        MODE AMAN 2026-08-31 (request user: 15-20k per beli):
+        - Sekali beli max Rp 15.000-20.000 biar bisa 3 koin beda, kalau 1 rugi gak langsung habis.
+        - Saldo < MIN_ORDER (10k) -> tidak beli.
         
         Args:
             balance (float): Saldo IDR tersedia.
@@ -393,21 +400,38 @@ class RiskManager:
         Returns:
             float: Jumlah kuantitas koin yang akan dibeli.
         """
-        risk_pct = RISK_PRIMARY_PCT if is_primary else RISK_SECONDARY_PCT
-        risk_amount = balance * risk_pct
-        # Adaptive cap: saldo < 500rb pakai 30% saldo biar tetap bisa entry (saldo 80rb -> 24rb, bukan stuck 500rb)
-        cap = balance * 0.30 if balance < POSITION_SIZE_USDT else POSITION_SIZE_USDT
-        position_value = min(cap, risk_amount)
-        min_value = MIN_ORDER_IDR * 1.5
-        if position_value < min_value:
-            if balance >= MIN_ORDER_IDR * 1.5:
-                # pakai 95% balance hanya jika masih di atas min order
-                position_value = max(balance * 0.95, float(MIN_ORDER_IDR))
-            elif balance >= MIN_ORDER_IDR:
-                position_value = float(balance)
-                logger.warning(f"Insufficient risk budget: balance {balance:,.0f} < min {min_value:,.0f}, using full balance")
-            else:
-                return 0
+        if balance < MIN_ORDER_IDR:
+            return 0
+
+        # Target per trade sesuai request: 15k - 20k
+        if balance >= 60000:
+            target = 20000  # saldo 60k+ -> 20k x 3 = 60k pas 3 slot
+        elif balance >= 45000:
+            target = 15000  # saldo 45k+ -> 15k x 3 = 45k
+        elif balance >= 30000:
+            target = 10000  # saldo 30k+ -> 10k x 3
+        elif balance >= MIN_ORDER_IDR:
+            target = 10000  # saldo kecil pakai 1 slot 10k
+        else:
+            return 0
+
+        # Jaga max 34% saldo per trade biar muat 3 posisi (khusus saldo besar)
+        if balance >= 45000:
+            max_allowed = balance * 0.34
+            position_value = min(target, max_allowed)
+        else:
+            # saldo kecil <45k tidak dipaksa 33%, pakai target langsung (1 slot)
+            position_value = min(target, balance)
+
+        # Pastikan minimal order Indodax 10k
+        if position_value < MIN_ORDER_IDR:
+            return 0
+        # Jangan pakai lebih dari saldo
+        if position_value > balance:
+            position_value = balance
+
+        logger.info(f"Position sizing Mode Aman: balance {balance:,.0f} -> target {target:,.0f} -> pakai {position_value:,.0f} IDR untuk {current_price:,.0f}")
+
         amount = position_value / current_price
         return round(amount, 8)
 
@@ -575,9 +599,9 @@ class RiskManager:
         return round(avg_win, 2), round(avg_loss, 2)
 
     def get_unrealized_pnl(self, exchange):
-        # Net unrealized sudah potong estimasi fee jual 0.3%
         """
         Menghitung estimasi floating profit/loss (unrealized PnL) dari seluruh posisi terbuka saat ini.
+        Net sudah potong fee jual 0.3% (sell fee) biar konsisten dengan close_position.
         
         Args:
             exchange (IndodaxExchange): Instansi exchange untuk query harga pasar real-time.
@@ -591,13 +615,16 @@ class RiskManager:
                 ticker = exchange.fetch_ticker(symbol)
                 if ticker and ticker.get("last"):
                     current_price = ticker["last"]
-                    unrealized = (current_price - pos.entry_price) * pos.amount
+                    # Net unreal: (current*0.997 - entry) * amount  [entry sudah include buy fee 0.3%]
+                    unrealized = (current_price * (1 - INDODAX_SELL_FEE) - pos.entry_price) * pos.amount
                     total_unrealized += unrealized
         return round(total_unrealized, 2)
 
     def get_total_portfolio_value(self, exchange, idr_balance):
         """
         Menghitung estimasi total nilai kekayaan bersih portofolio (Saldo IDR + Nilai Posisi Terbuka).
+        FIX 2026-08-31: sebelumnya double-count (balance + unreal + open_value = balance+2*current-entry).
+        Sekarang: balance + open_value (unrealized sudah terkandung di open_value vs cost basis, ditampilkan terpisah).
         
         Args:
             exchange (IndodaxExchange): Instansi exchange.
@@ -606,8 +633,8 @@ class RiskManager:
         Returns:
             float: Total valuasi portofolio dalam IDR.
         """
-        unrealized = self.get_unrealized_pnl(exchange)
-        return idr_balance + unrealized + self._get_open_positions_value(exchange)
+        # open_value = sum(current * amount) ; balance + open_value = total kekayaan mark-to-market
+        return idr_balance + self._get_open_positions_value(exchange)
 
     def _get_open_positions_value(self, exchange):
         """
@@ -730,7 +757,7 @@ class TradingStrategy:
                     pos.amount -= partial_amount
                     return {
                         "action": "partial_sell",
-                        "reason": f"tp1_hit (+3% @ {pos.get_tp1_price():,.0f})",
+                        "reason": f"tp1_hit (+1% @ {pos.get_tp1_price():,.0f})",
                         "analysis": analysis,
                         "amount": partial_amount,
                     }
@@ -738,7 +765,7 @@ class TradingStrategy:
             if pos.should_full_sell(current_price):
                 return {
                     "action": "close",
-                    "reason": f"tp2_hit (+6% @ {pos.get_tp2_price():,.0f})",
+                    "reason": f"tp2_hit (+3.5% @ {pos.get_tp2_price():,.0f})",
                     "analysis": analysis,
                     "amount": pos.amount,
                 }
@@ -768,19 +795,22 @@ class TradingStrategy:
                     "amount": pos.amount,
                 }
 
-            if rsi >= self.rsi_overbought and confidence > 0.5:
+            # MODE AMAN JUAL: jangan smart_sell saat masih rugi biar tidak jual rugi kecil -0.2% terus
+            # Hanya jual overbought kalau sudah untung minimal 0.5% (nutup setengah fee)
+            unreal_pct = (current_price - pos.entry_price) / pos.entry_price if pos.entry_price else 0
+            if rsi >= self.rsi_overbought and confidence > 0.5 and unreal_pct > 0.005:
                 return {
                     "action": "close",
-                    "reason": f"smart_sell (RSI: {rsi:.1f} overbought)",
+                    "reason": f"smart_sell (RSI: {rsi:.1f} overbought, profit {unreal_pct*100:.1f}%)",
                     "analysis": analysis,
                     "amount": pos.amount,
                 }
 
             macd_hist = indicators.get("macd_histogram", 0)
-            if rsi > 65 and macd_hist < 0:
+            if rsi > 65 and macd_hist < 0 and unreal_pct > 0.005:
                 return {
                     "action": "close",
-                    "reason": f"smart_sell (RSI: {rsi:.1f}, MACD bearish)",
+                    "reason": f"smart_sell (RSI: {rsi:.1f}, MACD bearish, profit {unreal_pct*100:.1f}%)",
                     "analysis": analysis,
                     "amount": pos.amount,
                 }

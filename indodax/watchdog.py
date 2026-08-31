@@ -89,6 +89,8 @@ def send_telegram(text):
         pass
 
 
+_LAST_PORTFOLIO_ERROR = None
+
 def get_portfolio():
     """
     Mengambil saldo kas dan seluruh koin di akun Indodax untuk dihitung total ekuivalen IDR-nya.
@@ -96,6 +98,8 @@ def get_portfolio():
     Returns:
         dict or None: Rangkuman 'total_idr', 'assets', dan 'daily_pnl', atau None jika gagal.
     """
+    global _LAST_PORTFOLIO_ERROR
+    _LAST_PORTFOLIO_ERROR = None
     sys.path.insert(0, SCRIPT_DIR)
     try:
         from exchange import IndodaxExchange
@@ -105,6 +109,8 @@ def get_portfolio():
 
         bal = ex.get_balance()
         if bal.get("error"):
+            _LAST_PORTFOLIO_ERROR = bal.get("message", "Unknown API error")
+            logger.warning(f"get_balance error: {_LAST_PORTFOLIO_ERROR}")
             return None
 
         total_idr = 0
@@ -128,6 +134,7 @@ def get_portfolio():
         return {"total_idr": total_idr, "assets": assets, "daily_pnl": daily_pnl}
     except Exception as e:
         logger.error(f"Portfolio error: {e}")
+        _LAST_PORTFOLIO_ERROR = str(e)[:200]
         return None
 
 
@@ -173,8 +180,28 @@ def main():
 
     portfolio = get_portfolio()
     if not portfolio:
-        msg = "🏦 <b>INDODAX</b>\n🟡 <b>BOT ALIVE</b>\n⚠️ Gagal cek portfolio"
+        # Gagal ambil saldo private API -> jelaskan dengan timestamp, IP, dan solusi (biasanya 403 IP whitelist)
+        try:
+            import urllib.request as _ur2
+            _ip = _ur2.urlopen(_ur2.Request("https://ifconfig.me", headers={"User-Agent": "curl/7.68"}), timeout=5).read().decode().strip()
+        except Exception:
+            _ip = "unknown"
+        ts = format_datetime()
+        err = _LAST_PORTFOLIO_ERROR or "Private API gagal (403 Forbidden?)"
+        # Deteksi khusus 403 -> hint IP whitelist
+        hint = ""
+        if "403" in err or "Forbidden" in err:
+            hint = "\n💡 <b>Solusi:</b> Update IP whitelist di indodax.com/trade_api\n   IP lama 110.136.119.82 → IP baru <code>" + _ip + "</code>"
+        msg = (
+            f"🏦 <b>INDODAX</b> — 🟡 <b>BOT ALIVE</b>\n"
+            f"🕐 {ts}\n"
+            f"⚠️ Gagal cek portfolio: {err}\n"
+            f"🌐 IP VPS: <code>{_ip}</code>\n"
+            f"ℹ️ Bot proses <b>masih jalan</b> (log & pgrep OK), tapi saldo/private API Indodax tidak bisa diakses.{hint}\n"
+            f"📋 Cek: <code>ssh smago 'tail -n 50 ~/trading-bot/indodax/logs/{ts[:10]}.log'</code>"
+        )
         send_telegram(msg)
+        print(f"ALIVE but portfolio None - IP {_ip} err={err}")
         return
 
     lines = ["🏦 <b>INDODAX BOT ALIVE</b>"]

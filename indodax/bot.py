@@ -614,7 +614,7 @@ class ProductionBot:
         self.logger.info(f"Timeframe: {CANDLESTICK_TIMEFRAME}")
         self.logger.info(f"Interval: {INTERVAL_SECONDS}s ({INTERVAL_SECONDS/60:.0f} min)")
         self.logger.info(f"Max Positions: {MAX_OPEN_POSITIONS}")
-        self.logger.info(f"Position Size: {POSITION_SIZE_USDT:,} IDR")
+        self.logger.info(f"Position Size: Mode Aman 15-20k IDR per trade (max 3 posisi, legacy cap {POSITION_SIZE_USDT:,} IDR)")
         self.logger.info("=" * 65)
 
         self.telegram.notify_start(TRADING_PAIRS, CANDLESTICK_TIMEFRAME)
