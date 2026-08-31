@@ -168,6 +168,13 @@ PROXY_SERVER=socks5://127.0.0.1:1080 node ajaib/src/login-via-tunnel.js  # heade
 
 **Verif 08:46**: `Balance 60.413` `Scanning 14 Found 2 buy 3 sell` `Position sizing Mode Aman: 60.413 -> 20.000` (next buy akan 20k). Open 4 dust menunggu TP1 1% / SL 3%.
 
+**Tambahan 11:02 — Screener SOLID (sesuai request https://invest.ajaib.co.id/home/stocks):**
+
+- **Masalah ss**: datatable Harga asc `ARTI 2` `ANDI 17` `ALTO 18` `Vol 0` — gocap tidur, Notasi Khusus `X` (suspend), tidak liquid. Bot sebelumnya `saham/config.py:86` `ALL_STOCKS 26-42` tanpa filter harga/vol, jadi `saham/bot.py:322` `Scanning 42` semua dicoba.
+- **Fix**: `saham/config.py:97` tambah `SOLID_PRICE_MIN 50` `MAX 2000` `VOL_MIN 1M` `CHANGE -10..+20`; `saham/bot.py:312` `scan_all_stocks()` filter `price 50-2000` skip `ARTI 2` `ANDI 17`, `vol <1M` skip `ALTO 18 Vol 0`, `change` skip pump/dump. Log sekarang `Solid filter: 10/26 lolos (price 50-2000, vol >1M)` (verif 10:48, 10:54, 10:59).
+- **Hybrid screener**: `saham/screener-ajaib.js` (Playwright) scrape `invest.ajaib.co.id/home/stocks` 1x sehari `08:40` pre-market (bukan tiap 5m), parse `Kode Notasi Harga Vol Change`, filter `harga 50-2000 vol>1M change -10..+20 notasi bersih skip X`, sort `Vol desc` top 10 → `screener-result.json` untuk review. Yfinance tetap untuk OHLCV 90d + RSI/MACD (lebih stabil, tanpa Cloudflare tiap cycle).
+- **Hasil**: `PADI 71 Vol 2M LOLOS` `GOTO 50 Vol 500M LOLOS` (murah solid), `ARTI 2 SKIP` `ALTO 18 Vol 0 SKIP` — sesuai ide filter solid.
+
 ---
 
 ## 8. Troubleshooting

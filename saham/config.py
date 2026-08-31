@@ -91,6 +91,16 @@ ALL_STOCKS = [
     "BUMI.JK", "BRMS.JK", "DEWA.JK", "BRPT.JK", "GOTO.JK", "PADI.JK",
 ]
 
+# ==============================================================================
+# Filter SOLID untuk screener (tambahkan 31-08-2026: hindari gocap tidur Vol 0)
+# ==============================================================================
+# Harga 50-2.000 = murah tapi tidak gocap 2-38, Vol >1M = liquid, Change -10%..+20% = tidak pump/dump
+SOLID_PRICE_MIN = 50        # Rp 50  = 1 lot Rp 5.000 (modal 76k masih kebeli)
+SOLID_PRICE_MAX = 2000      # Rp 2.000 = 1 lot Rp 200.000 (batas cash 76k akan Cannot afford, auto skip)
+SOLID_VOL_MIN = 1000000     # 1 juta lembar/hari (~10 lot) minimal liquid
+SOLID_CHANGE_MIN_PCT = -10  # skip dump <-10%
+SOLID_CHANGE_MAX_PCT = 20   # skip pump >+20% (hindari FOMO pucuk)
+
 # Pemetaan dari simbol Yahoo Finance (*.JK) ke kode ticker murni di platform Ajaib Sekuritas
 STOCK_CODE_MAP = {
     "BBCA.JK": "BBCA", "BMRI.JK": "BMRI", "BBRI.JK": "BBRI",

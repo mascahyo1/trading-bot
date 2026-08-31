@@ -34,6 +34,8 @@ from config import (
     MAX_OPEN_POSITIONS, POSITION_SIZE_IDR, MIN_ORDER_IDR,
     STOCK_CODE_MAP, BUY_TOTAL_FEE_PCT, SELL_TOTAL_FEE_PCT,
     now_jakarta, format_datetime, LOT_SIZE,
+    SOLID_PRICE_MIN, SOLID_PRICE_MAX, SOLID_VOL_MIN,
+    SOLID_CHANGE_MIN_PCT, SOLID_CHANGE_MAX_PCT,
 )
 
 from exchange import StockExchange
@@ -313,6 +315,9 @@ class SahamBot:
         Scan semua saham di ALL_STOCKS: fetch candle 90 hari + harga terkini,
         lalu jalankan analisis teknikal untuk masing-masing.
 
+        SOLID FILTER 31-08-2026: skip gocap tidur (harga <50 atau >2000, Vol <1M, Change pump/dump)
+        Sumber: https://invest.ajaib.co.id/home/stocks diurut Harga asc — yang Vol 0 & harga 2-38 auto skip.
+
         Delay 0.3s antar saham untuk hindari rate-limit yfinance.
 
         Returns:
@@ -326,17 +331,44 @@ class SahamBot:
                     continue
 
                 ticker = self.exchange.fetch_ticker(symbol)
-                if not ticker:
+                if not ticker or not ticker.get("last"):
                     continue
+
+                current_price = ticker["last"]
+                # SOLID FILTER: harga 50-2000 (skip ARTI 2, ANDI 17 dll)
+                if current_price < SOLID_PRICE_MIN or current_price > SOLID_PRICE_MAX:
+                    self.logger.debug(f"[{symbol}] Skip solid: price {current_price} outside {SOLID_PRICE_MIN}-{SOLID_PRICE_MAX}")
+                    continue
+
+                # SOLID FILTER: volume harian & change% dari ohlcv terakhir (yfinance)
+                try:
+                    last = ohlcv[-1]
+                    prev = ohlcv[-2] if len(ohlcv) >= 2 else None
+                    # ohlcv format [timestamp, open, high, low, close, volume] — volume di index 5
+                    vol = float(last[5]) if len(last) > 5 else 0
+                    if vol < SOLID_VOL_MIN:
+                        self.logger.debug(f"[{symbol}] Skip solid: vol {vol:.0f} < {SOLID_VOL_MIN}")
+                        continue
+                    if prev:
+                        close = float(last[4])
+                        prev_close = float(prev[4])
+                        if prev_close > 0:
+                            chg = (close - prev_close) / prev_close * 100
+                            if chg < SOLID_CHANGE_MIN_PCT or chg > SOLID_CHANGE_MAX_PCT:
+                                self.logger.debug(f"[{symbol}] Skip solid: change {chg:.1f}% outside {SOLID_CHANGE_MIN_PCT}..{SOLID_CHANGE_MAX_PCT}")
+                                continue
+                except Exception as e:
+                    self.logger.debug(f"[{symbol}] solid vol/change check skip: {e}")
 
                 analysis = self.analyzer.analyze(ohlcv, symbol=symbol)
                 analysis["symbol"] = symbol
-                analysis["current_price"] = ticker["last"]
+                analysis["current_price"] = current_price
                 analysis["ohlcv"] = ohlcv  # keep for process_stock reuse
                 results.append(analysis)
             except Exception as e:
                 self.logger.warning(f"[{symbol}] Scan error: {e}")
             time.sleep(0.2)
+        self.logger.info(f"Solid filter: {len(results)}/{len(ALL_STOCKS)} lolos (price {SOLID_PRICE_MIN}-{SOLID_PRICE_MAX}, vol >{SOLID_VOL_MIN/1e6:.0f}M)")
         return results
 
     def get_top_candidates(self, results, signal_type="buy"):
